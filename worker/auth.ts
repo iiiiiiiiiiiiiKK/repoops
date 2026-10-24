@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OAuth + session routes.
  *
  * Scope policy (minimum necessary):
@@ -15,6 +15,8 @@ import type { SessionInfo } from '../shared/types';
 
 const STATE_COOKIE = 'repoops_oauth_state';
 const STATE_TTL = 600;
+/** Session cookie lifetime; must match the 14-day TTL enforced in session.ts. */
+const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 14;
 
 function originOf(request: Request, env: Env): string {
   const configured = env.APP_ORIGIN;
@@ -158,7 +160,7 @@ export async function handleCallback(request: Request, env: Env): Promise<Respon
     status: 302,
     headers: {
       location: target.toString(),
-      'set-cookie': sessionCookie(sid, STATE_TTL * 2 * 24 * 7, origin),
+      'set-cookie': sessionCookie(sid, SESSION_COOKIE_MAX_AGE, origin),
       'cache-control': 'no-store',
     },
   });
@@ -200,7 +202,7 @@ export async function handleTokenLogin(env: Env, request: Request): Promise<Resp
 
   return json(
     { ok: true, login: me.login, scopes: scopesHeader.split(/[,\s]+/).filter(Boolean) },
-    { headers: { 'set-cookie': sessionCookie(sid, STATE_TTL * 2 * 24 * 7, originOf(request, env)) } },
+    { headers: { 'set-cookie': sessionCookie(sid, SESSION_COOKIE_MAX_AGE, originOf(request, env)) } },
   );
 }
 
