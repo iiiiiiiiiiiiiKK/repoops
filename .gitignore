@@ -1,0 +1,41 @@
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.wrangler/
+.output/
+
+# Local env & secrets — never commit
+.env
+.env.local
+.env.*.local
+.dev.vars
+*.dev.vars
+.session-secret.txt
+.seed-demo.sql
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+tests/e2e/screenshots/
+
+# Local D1 state
+.wrangler/state/

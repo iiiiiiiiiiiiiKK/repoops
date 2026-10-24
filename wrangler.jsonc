@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "repoops",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": ["17 */6 * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "repoops-db",
+      "database_id": "02e5cd73-968d-43bd-8bb4-784bb3420d5f",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
+  "vars": {
+    "APP_NAME": "RepoOps",
+    "DEMO_REPO": "honojs/hono",
+    "GITHUB_API_BASE": "https://api.github.com",
+    "OAUTH_REDIRECT_PATH": "/api/auth/callback"
+  }
+}
