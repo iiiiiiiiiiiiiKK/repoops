@@ -35,10 +35,10 @@ export function daysSince(iso: string | null | undefined, now: number = Date.now
  * 6. every other open issue                            -> author (needs a reply)
  */
 export function bucketOf(item: NormalizedItem, thresholds: BoardThresholds, now: number = Date.now()): Bucket {
-  if (item.state === 'closed') {
-    const closedAt = item.mergedAt ?? item.closedAt;
-    return daysSince(closedAt, now) <= thresholds.doneDays ? 'done' : 'done';
-  }
+  // Closed/merged work lives in `done`. `boardItems()` is responsible for
+  // dropping the ones that fell outside the completion window, so this branch
+  // can stay unconditional — a closed item never appears in an open queue.
+  if (item.state === 'closed') return 'done';
   if (daysSince(item.updatedAt, now) > thresholds.staleDays) return 'stalled';
 
   if (item.kind === 'pr') {
