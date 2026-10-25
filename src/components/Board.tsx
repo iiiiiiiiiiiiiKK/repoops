@@ -76,7 +76,16 @@ function ItemCard({ item, selected, checked, onOpen, onToggle, staleDays }: Card
 
       <div className="card__foot">
         <span className="card__author">
-          {item.authorAvatar && <img src={item.authorAvatar} alt="" loading="lazy" width={13} height={13} />}
+          {/*
+            Cards use a local initial instead of the GitHub avatar: a board with
+            120+ cards would otherwise fire 120+ third-party image requests to
+            avatars.githubusercontent.com on every page load (slow first paint,
+            and it leaks every reader's IP to GitHub). The real avatar is shown
+            once, in the detail panel.
+          */}
+          <span className="card__avatar" aria-hidden>
+            {item.author.slice(0, 1).toUpperCase()}
+          </span>
           {item.author}
         </span>
         <span className="card__spacer" />

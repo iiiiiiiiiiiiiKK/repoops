@@ -50,7 +50,7 @@ page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
 try {
   /* ---------------------------------------------------------------- load */
-  const resp = await page.goto(BASE, { waitUntil: 'networkidle', timeout: 45_000 });
+  const resp = await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   record('页面可访问 (HTTP 200)', resp?.status() === 200, `status ${resp?.status()}`);
 
   await page.waitForSelector('[data-testid="board"]', { timeout: 30_000 });
@@ -59,6 +59,11 @@ try {
   const columns = await page.locator('.column').count();
   record('五个队列列都存在', columns === 5, `${columns} columns`);
 
+  // The board shell renders before the demo payload arrives, so wait for the
+  // first card instead of assuming data is already on screen.
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="item-card"]').length > 0, null, {
+    timeout: 30_000,
+  });
   const cards = await page.locator('[data-testid="item-card"]').count();
   record('演示数据渲染为卡片', cards > 0, `${cards} cards`);
 
@@ -247,8 +252,11 @@ try {
   });
   const m = await iphone.newPage();
   m.on('pageerror', (err) => consoleErrors.push(`mobile pageerror: ${err.message}`));
-  await m.goto(BASE, { waitUntil: 'networkidle', timeout: 45_000 });
+  await m.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await m.waitForSelector('[data-testid="board"]', { timeout: 30_000 });
+  await m.waitForFunction(() => document.querySelectorAll('[data-testid="item-card"]').length > 0, null, {
+    timeout: 30_000,
+  });
   record('iPhone 390x844 可正常加载', true);
 
   const overflowInfo = await m.evaluate(
@@ -326,7 +334,7 @@ try {
     locale: 'zh-CN',
   });
   const t = await ipad.newPage();
-  await t.goto(BASE, { waitUntil: 'networkidle', timeout: 45_000 });
+  await t.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await t.waitForSelector('[data-testid="board"]');
   const tabletOverflow = await t.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   record('iPad 820x1180 无横向溢出', !tabletOverflow);
@@ -341,7 +349,7 @@ try {
     locale: 'zh-CN',
   });
   const sePage = await se.newPage();
-  await sePage.goto(BASE, { waitUntil: 'networkidle', timeout: 45_000 });
+  await sePage.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await sePage.waitForSelector('[data-testid="board"]');
   const seOverflow = await sePage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   record('iPhone SE 375x667 无横向溢出', !seOverflow);

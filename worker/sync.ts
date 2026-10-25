@@ -409,11 +409,78 @@ export async function listTrackedRepos(env: Env, login: string): Promise<Tracker
  */
 const DEMO_TTL_MS = 1000 * 60 * 60 * 6;
 
+/**
+ * After a failed refresh we keep serving the last good snapshot and postpone
+ * the next attempt, so a GitHub quota outage cannot turn every page load into
+ * another doomed request against an already exhausted limit.
+ */
+const DEMO_RETRY_BACKOFF_MS = 1000 * 60 * 15;
+
 export interface DemoSnapshot {
   repo: TrackerRepo;
   items: NormalizedItem[];
   fetchedAt: string;
   stale: boolean;
+}
+
+/**
+ * Fetch a demo snapshot and persist it.
+ *
+ * Deliberately **never deletes the existing rows first**: a failed refresh must
+ * leave the previous good snapshot intact so the public demo degrades to
+ * "stale but working" instead of a 429 error page.
+ *
+ * Returns true when the cache was updated.
+ */
+export async function refreshDemoSnapshot(env: Env, repoFullName: string): Promise<boolean> {
+  const snapshot = await fetchRepoSnapshot(env, repoFullName, env.GITHUB_TOKEN ?? null, { maxPages: 2 });
+  const nowIso = new Date().toISOString();
+  const repo: TrackerRepo = {
+    ...snapshot.repo,
+    addedAt: nowIso,
+    sync: {
+      repo: repoFullName,
+      lastSyncAt: nowIso,
+      itemCount: snapshot.items.length,
+      pagesFetched: snapshot.pages,
+      complete: snapshot.complete,
+      cursor: snapshot.cursor,
+      errors: snapshot.errors,
+      rateLimit: snapshot.rateLimit,
+      lastRunDurationMs: null,
+      mode: 'demo',
+    },
+  };
+
+  await env.DB.prepare(
+    `INSERT INTO demo_meta (repo_full_name, payload, fetched_at, expires_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(repo_full_name) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at, expires_at = excluded.expires_at`,
+  )
+    .bind(repoFullName, JSON.stringify(repo), nowIso, new Date(Date.now() + DEMO_TTL_MS).toISOString())
+    .run();
+
+  // One row per item keeps every statement far below D1's size ceiling.
+  const statements = snapshot.items.map((item) =>
+    env.DB.prepare(
+      `INSERT INTO demo_items (repo_full_name, item_id, updated_at, payload) VALUES (?, ?, ?, ?)
+       ON CONFLICT(repo_full_name, item_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
+    ).bind(repoFullName, item.id, item.updatedAt, JSON.stringify(item)),
+  );
+  for (let i = 0; i < statements.length; i += 40) {
+    await env.DB.batch(statements.slice(i, i + 40));
+  }
+  return true;
+}
+
+/** Push the next refresh attempt out without touching the cached payload. */
+async function postponeDemoRefresh(env: Env, repoFullName: string): Promise<void> {
+  try {
+    await env.DB.prepare('UPDATE demo_meta SET expires_at = ? WHERE repo_full_name = ?')
+      .bind(new Date(Date.now() + DEMO_RETRY_BACKOFF_MS).toISOString(), repoFullName)
+      .run();
+  } catch {
+    // Non-fatal: the read path already falls back to the stale snapshot.
+  }
 }
 
 /**
@@ -434,54 +501,31 @@ export async function loadDemoSnapshot(env: Env, repoFullName: string): Promise<
   }
 
   try {
-    const snapshot = await fetchRepoSnapshot(env, repoFullName, env.GITHUB_TOKEN ?? null, { maxPages: 2 });
-    const nowIso = new Date().toISOString();
-    const repo: TrackerRepo = {
-      ...snapshot.repo,
-      addedAt: nowIso,
-      sync: {
-        repo: repoFullName,
-        lastSyncAt: nowIso,
-        itemCount: snapshot.items.length,
-        pagesFetched: snapshot.pages,
-        complete: snapshot.complete,
-        cursor: snapshot.cursor,
-        errors: snapshot.errors,
-        rateLimit: snapshot.rateLimit,
-        lastRunDurationMs: null,
-        mode: 'demo',
-      },
-    };
-    await env.DB.prepare(
-      `INSERT INTO demo_meta (repo_full_name, payload, fetched_at, expires_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(repo_full_name) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at, expires_at = excluded.expires_at`,
-    )
-      .bind(repoFullName, JSON.stringify(repo), nowIso, new Date(Date.now() + DEMO_TTL_MS).toISOString())
-      .run();
-
-    // One row per item keeps every statement far below D1's size ceiling.
-    const statements = snapshot.items.map((item) =>
-      env.DB.prepare(
-        `INSERT INTO demo_items (repo_full_name, item_id, updated_at, payload) VALUES (?, ?, ?, ?)
-         ON CONFLICT(repo_full_name, item_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
-      ).bind(repoFullName, item.id, item.updatedAt, JSON.stringify(item)),
-    );
-    for (let i = 0; i < statements.length; i += 40) {
-      await env.DB.batch(statements.slice(i, i + 40));
-    }
-    return { repo, items: snapshot.items, fetchedAt: nowIso, stale: false };
+    await refreshDemoSnapshot(env, repoFullName);
+    const updated = await env.DB.prepare('SELECT payload, fetched_at FROM demo_meta WHERE repo_full_name = ?')
+      .bind(repoFullName)
+      .first<{ payload: string; fetched_at: string }>();
+    const repo = JSON.parse(updated?.payload ?? meta?.payload ?? 'null') as TrackerRepo;
+    const items = await readDemoItems(env, repoFullName);
+    return { repo, items, fetchedAt: updated?.fetched_at ?? meta?.fetched_at ?? new Date().toISOString(), stale: false };
   } catch (err) {
     if (meta) {
-      // Serve the last good snapshot rather than an error screen.
+      // Serve the last good snapshot rather than an error screen, and back off
+      // so we stop hammering an exhausted quota.
       const repo = JSON.parse(meta.payload) as TrackerRepo;
       const items = await readDemoItems(env, repoFullName);
-      if (items.length > 0) return { repo, items, fetchedAt: meta.fetched_at, stale: true };
+      if (items.length > 0) {
+        await postponeDemoRefresh(env, repoFullName);
+        console.warn('[repoops] demo refresh failed, serving stale snapshot:', (err as Error).message);
+        return { repo, items, fetchedAt: meta.fetched_at, stale: true };
+      }
     }
     throw err;
   }
 }
 
-async function readDemoItems(env: Env, repoFullName: string): Promise<NormalizedItem[]> {  const { results } = await env.DB.prepare(
+async function readDemoItems(env: Env, repoFullName: string): Promise<NormalizedItem[]> {
+  const { results } = await env.DB.prepare(
     'SELECT payload FROM demo_items WHERE repo_full_name = ? ORDER BY updated_at DESC LIMIT 600',
   )
     .bind(repoFullName)

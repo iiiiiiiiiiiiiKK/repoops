@@ -11,6 +11,7 @@ import { loadSession, requireSession } from './session';
 import {
   listTrackedRepos,
   loadDemoSnapshot,
+  refreshDemoSnapshot,
   parseRepoFullName,
   readCachedItems,
   readSyncState,
@@ -102,8 +103,9 @@ export default {
       (async () => {
         try {
           const { owner, name } = parseRepoFullName(env.DEMO_REPO);
-          await env.DB.prepare('DELETE FROM demo_meta WHERE repo_full_name = ?').bind(`${owner}/${name}`).run();
-          await loadDemoSnapshot(env, `${owner}/${name}`);
+          // Refresh in place: a failure here must not destroy the previous good
+          // snapshot that the public demo falls back to.
+          await refreshDemoSnapshot(env, `${owner}/${name}`);
           console.log('[repoops] cron: demo cache refreshed for', `${owner}/${name}`);
         } catch (err) {
           console.error('[repoops] cron: demo refresh failed', err instanceof Error ? err.message : err);

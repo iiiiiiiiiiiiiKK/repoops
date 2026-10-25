@@ -127,7 +127,7 @@ export function TopBar({
           className="btn btn--sm"
           onClick={onSync}
           disabled={syncing || mode === 'demo' || !session?.authenticated}
-          title={mode === 'demo' ? '演示数据每 30 分钟自动刷新' : '重新同步该仓库'}
+          title={mode === 'demo' ? '演示快照每 6 小时由定时任务刷新；GitHub 不可达时回退到上一份可用快照' : '重新同步该仓库'}
         >
           <IconRefresh size={13} style={syncing ? { animation: 'spin 0.9s linear infinite' } : undefined} />
           <span className="hide-xs">{syncing ? '同步中' : '同步'}</span>

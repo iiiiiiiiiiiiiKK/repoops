@@ -71,7 +71,7 @@ RepoOps 把仓库里的事项压成五个队列：
 - GitHub OAuth（最小权限：`read:user public_repo`，私有仓库需显式升级）
 - 只读 Token 登录作为 fallback
 - 多仓库跟踪（上限 12 个）
-- 增量同步：`since` 游标 + 30 分钟缓存
+- 增量同步：`since` 游标 + 本地 D1 缓存（打开看板 0 次 GitHub 调用）
 - 分页进度、API 配额、同步错误全部可见
 
 </td><td valign="top">

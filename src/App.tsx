@@ -418,8 +418,9 @@ export default function App() {
             <div className="notice notice--warn">
               <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
               <span>
-                当前展示的是 <strong>演示数据</strong>：{activeRepoName} 的真实公开 GitHub 数据快照（只读、每 30 分钟刷新），
-                不属于任何登录用户，也不会与你的仓库混在一起。
+                当前展示的是 <strong>演示数据</strong>：{activeRepoName} 的真实公开 GitHub 数据快照（只读、每 6 小时刷新，
+                与任何登录用户的工作区物理隔离）
+                {staleNotice ? '，当前为缓存快照（GitHub 暂时不可达）' : ''}。
                 {!session?.authenticated && (
                   <>
                     {' '}
