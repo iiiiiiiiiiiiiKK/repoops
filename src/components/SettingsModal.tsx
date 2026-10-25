@@ -122,7 +122,7 @@ export function SettingsModal({
                   <div className="notice notice--warn" style={{ marginBottom: 12 }}>
                     <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
                     <span>
-                      断开连接会删除本部署上的会话、仓库关联、缓存条目、同步状态和周报记录。GitHub 上的 Issue / PR 完全不受影响。
+                      断开连接会删除本部署上该账号的**全部会话（包括你在其他设备/浏览器上的登录）**、仓库关联、缓存条目、同步状态和周报记录。GitHub 上的 Issue / PR 完全不受影响。
                     </span>
                   </div>
                   {confirmDisconnect ? (
