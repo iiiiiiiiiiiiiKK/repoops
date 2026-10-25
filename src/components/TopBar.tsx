@@ -124,7 +124,7 @@ export function TopBar({
               )}
             </>
           ) : (
-            <span>只读维护工作台</span>
+            <span>{session?.authenticated ? '还没有选择仓库' : '只读维护工作台'}</span>
           )}
         </span>
       </div>

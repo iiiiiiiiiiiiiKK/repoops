@@ -266,8 +266,10 @@ node tests/oauth-wiring.mjs     <url>  # 10 项 OAuth 接线检查（无需人�
 node tests/navigation-routing.mjs <url>  # 8 项真实浏览器导航路由检查（catch SPA 回退吃掉 /api）
 node tests/oauth-ui.mjs         <url>  # 4 项连接面板检查（登录按钮 / 私有仓库开关 / Token 逃生口）
 node tests/diagnose-oauth.mjs   <url>  # 排障：真实浏览器打开 GitHub 授权页并截图
-GITHUB_TEST_TOKEN=ghp_xxx \\
+GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/token-connect-ui.mjs <url>  # 5 项 Token 连接 UI 流程（不含 OAuth，只依赖 api.github.com）
+GITHUB_TEST_TOKEN=ghp_xxx \
+  node tests/first-run.mjs <url> owner/name  # 13 项首次登录流程（连接 → 真实空状态 → 就地添加仓库）
 GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/live-auth.mjs      <url>  # 42 项登录态真实流程测试
 ```
@@ -284,6 +286,7 @@ GITHUB_TEST_TOKEN=ghp_xxx \
 | 导航路由 | **8 / 8 通过** | 真实浏览器导航：`/api/health` 返回 JSON、`/api/auth/login` 返回 302 并离开本站、`/api/auth/callback` 命中 Worker、未知 `/api` 路径 404、SPA 深链接仍回落首页 |
 | 连接面板 UI | **4 / 4 通过** | 登录链接 scope、私有仓库开关切到 `?private=1`、Token 逃生口聚焦、排障文案 |
 | Token 连接 UI | **5 / 5 通过** | 粘贴 Token → 建立会话 → 刷新保持 → 断开清数据 |
+| 首次登录流程 | **13 / 13 通过** | 授权后不误显示「演示数据」、空状态说明已连接账号、就地输入仓库即可添加并渲染真实看板、断开清数据 |
 | 登录态流程 | **42 / 42 通过** | 真实私有仓库（`iiiiiiiiiiiiiKK/0xKill`）授权、增量同步、配额记录、跨用户隔离、断开连接清除数据 |
 
 其中 E2E 的关键断言是**周报数字与看板卡片数逐列相等**：

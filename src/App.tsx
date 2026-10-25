@@ -56,7 +56,15 @@ export default function App() {
   const [repos, setRepos] = useState<TrackerRepo[]>([]);
   const [activeRepoName, setActiveRepoName] = useState<string | null>(null);
   const [items, setItems] = useState<NormalizedItem[]>([]);
-  const [mode, setMode] = useState<'live' | 'demo'>('demo');
+  /*
+    Mode is derived, never stored.
+    It used to be a state initialised to 'demo' and only flipped to 'live' after
+    a dashboard load — so a freshly connected account with zero tracked repos
+    (nothing to load) kept showing the orange 演示数据 badge, a demo banner with
+    an empty repo name, and the subtitle 只读维护工作台, right after a successful
+    GitHub authorization. Deriving it removes that whole class of bug.
+  */
+  const mode: 'live' | 'demo' = session?.authenticated ? 'live' : 'demo';
   const [staleNotice, setStaleNotice] = useState(false);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -74,6 +82,10 @@ export default function App() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Inline "add your first repo" form shown right after connecting.
+  const [firstRepoInput, setFirstRepoInput] = useState('');
+  const [firstRepoBusy, setFirstRepoBusy] = useState(false);
+  const [firstRepoError, setFirstRepoError] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,13 +128,11 @@ export default function App() {
         if (authenticated) {
           const payload = await api.dashboard(repoName);
           setItems(payload.items);
-          setMode('live');
           setStaleNotice(false);
           setRepos((prev) => prev.map((r) => (r.fullName === repoName ? { ...r, ...payload.repo } : r)));
         } else {
           const payload = await api.demo(repoName);
           setItems(payload.items);
-          setMode('demo');
           setStaleNotice(payload.stale);
           setRepos([payload.repo]);
         }
@@ -166,7 +176,6 @@ export default function App() {
     try {
       const payload = await api.sync(activeRepoName);
       setItems(payload.items);
-      setMode('live');
       setStaleNotice(false);
       setRepos((prev) => prev.map((r) => (r.fullName === activeRepoName ? payload.repo : r)));
       const errs = payload.repo.sync.errors;
@@ -315,7 +324,7 @@ export default function App() {
     push('ok', '已断开连接并删除本地数据');
   };
 
-  const authBanner = useMemo(() => {
+  const [authBanner, setAuthBanner] = useState<{ ok: boolean; reason: string | null } | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const auth = params.get('auth');
     if (auth) {
@@ -327,10 +336,19 @@ export default function App() {
     // the token exchange never completed (blocked network, cancelled consent, or
     // a stale state cookie). Say so instead of silently showing the demo.
     if (typeof document !== 'undefined' && /(^|\.)github\.com$/.test(new URL(document.referrer || 'https://x.invalid').hostname)) {
-      return { ok: false, reason: 'interrupted' as string | null };
+      return { ok: false, reason: 'interrupted' };
     }
     return null;
-  }, []);
+  });
+
+  // Auto-dismiss the one-shot auth result banner: it is a toast-like hint, not
+  // persistent state, and it used to sit there forever saying "adding a repo"
+  // even after the user had added several.
+  useEffect(() => {
+    if (!authBanner?.ok) return;
+    const t = window.setTimeout(() => setAuthBanner(null), 8000);
+    return () => window.clearTimeout(t);
+  }, [authBanner]);
 
   /* --------------------------------- render ------------------------------ */
 
@@ -396,7 +414,10 @@ export default function App() {
               <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
               <span>
                 {authBanner.ok ? (
-                  'GitHub 授权成功，正在同步你的仓库列表。'
+                  <>
+                    GitHub 授权成功{session?.login ? `（@${session.login}）` : ''}。
+                    {repos.length > 0 ? '已载入你之前跟踪的仓库。' : '添加一个仓库就可以开始了。'}
+                  </>
                 ) : authBanner.reason === 'interrupted' ? (
                   <>
                     从 GitHub 回来了，但授权没有完成 —— 通常是因为 <code>github.com</code> 在你当前网络打不开、页面被中断，或者你在
@@ -431,25 +452,21 @@ export default function App() {
           </div>
         )}
 
-        {mode === 'demo' && (
+        {/* Only claim "demo data" when the visitor is really unauthenticated. */}
+        {!session?.authenticated && (
           <div className="banner-slot banner-slot--demo">
             <div className="notice notice--warn demo-banner">
               <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
               <span>
                 <strong>演示数据</strong>
                 <span className="demo-banner__detail">
-                  ：{activeRepoName} 的真实公开 GitHub 数据快照（只读、每 6 小时刷新，与任何登录用户的工作区物理隔离）
+                  ：{activeRepoName ?? 'honojs/hono'} 的真实公开 GitHub 数据快照（只读、每 6 小时刷新，与任何登录用户的工作区物理隔离）
                   {staleNotice ? '，当前为缓存快照（GitHub 暂时不可达）' : ''}
                 </span>
                 <span className="demo-banner__short"> · 只读快照</span>
-                {!session?.authenticated && (
-                  <>
-                    {' '}
-                    <button className="btn btn--sm" style={{ marginLeft: 6 }} onClick={() => setSettingsOpen(true)}>
-                      连接 GitHub
-                    </button>
-                  </>
-                )}
+                <button className="btn btn--sm" style={{ marginLeft: 6 }} onClick={() => setSettingsOpen(true)}>
+                  连接 GitHub
+                </button>
               </span>
             </div>
           </div>
@@ -459,14 +476,51 @@ export default function App() {
           <div className="board-area" ref={searchRef}>
             {session?.authenticated && repos.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-state__title">还没有添加仓库</div>
+                <div className="empty-state__title">已连接 @{session.login}，添加第一个仓库</div>
                 <div className="empty-state__text">
-                  输入一个 <code>owner/name</code>，RepoOps 会用你的令牌拉取 Issues 与 PR，并立即建立五个队列。
+                  输入 <code>owner/name</code>（或粘贴 github.com 链接）。RepoOps 会用你的令牌拉取 Issues 与 PR，
+                  建立「待处理 / 等待审查 / 等待作者 / 已停滞 / 近期完成」五个队列。
                 </div>
-                <button className="btn btn--primary" onClick={() => setSettingsOpen(true)}>
-                  <IconPlus size={13} />
-                  添加仓库
-                </button>
+                <form
+                  className="row"
+                  style={{ width: 'min(520px, 100%)', gap: 8 }}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const value = firstRepoInput.trim();
+                    if (!value || firstRepoBusy) return;
+                    setFirstRepoBusy(true);
+                    setFirstRepoError(null);
+                    handleAddRepo(value)
+                      .then(() => setFirstRepoInput(''))
+                      .catch((err) => setFirstRepoError((err as Error).message))
+                      .finally(() => setFirstRepoBusy(false));
+                  }}
+                >
+                  <input
+                    className="select"
+                    data-testid="first-repo-input"
+                    style={{ flex: 1, padding: '9px 10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                    placeholder="owner/name 或 https://github.com/owner/name"
+                    value={firstRepoInput}
+                    onChange={(e) => setFirstRepoInput(e.target.value)}
+                    aria-label="要添加的仓库"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button className="btn btn--primary" type="submit" disabled={!firstRepoInput.trim() || firstRepoBusy}>
+                    <IconPlus size={13} />
+                    {firstRepoBusy ? '同步中…' : '添加并同步'}
+                  </button>
+                </form>
+                {firstRepoError && (
+                  <div className="notice notice--error" style={{ maxWidth: 520 }} data-testid="first-repo-error">
+                    <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
+                    <span>{firstRepoError}</span>
+                  </div>
+                )}
+                <div className="faint" style={{ fontSize: 11.5, maxWidth: 520 }}>
+                  只想先看看？左侧仓库列表里的演示仓库随时可以切换过去。
+                </div>
               </div>
             ) : (
               <>
