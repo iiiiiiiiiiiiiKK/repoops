@@ -265,6 +265,8 @@ node tests/e2e/responsive-audit.mjs <url>  # 159 项响应式几何断言（11 �
 node tests/oauth-wiring.mjs     <url>  # 10 项 OAuth 接线检查（无需人工点授权）
 node tests/oauth-ui.mjs         <url>  # 4 项连接面板检查（登录按钮 / 私有仓库开关 / Token 逃生口）
 node tests/diagnose-oauth.mjs   <url>  # 排障：真实浏览器打开 GitHub 授权页并截图
+GITHUB_TEST_TOKEN=ghp_xxx \\
+  node tests/token-connect-ui.mjs <url>  # 5 项 Token 连接 UI 流程（不含 OAuth，只依赖 api.github.com）
 GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/live-auth.mjs      <url>  # 42 项登录态真实流程测试
 ```
