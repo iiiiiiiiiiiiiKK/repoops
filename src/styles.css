@@ -1035,6 +1035,40 @@ button {
   color: var(--accent);
 }
 
+/* Banner slots above the board (demo mode, auth result, errors). */
+.banner-slot {
+  padding: 8px 14px 0;
+  flex: none;
+}
+.demo-banner__short {
+  display: none;
+}
+/* On very short viewports (landscape phones) the demo banner is the difference
+   between seeing a card and seeing nothing, so it collapses to one line. */
+@media (max-height: 520px) {
+  .banner-slot {
+    padding: 4px 10px 0;
+  }
+  .demo-banner {
+    padding: 5px 8px;
+    font-size: 11px;
+    align-items: center;
+  }
+  .demo-banner__detail {
+    display: none;
+  }
+  .demo-banner__short {
+    display: inline;
+  }
+}
+/* Below 420px of height the banner is dropped entirely; the header still shows
+   the orange 演示数据 badge, so the demo/read-only state stays visible. */
+@media (max-height: 420px) {
+  .banner-slot--demo {
+    display: none;
+  }
+}
+
 /* =========================================================================
    Modals
    ========================================================================= */

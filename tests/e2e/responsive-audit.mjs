@@ -20,6 +20,10 @@ const VIEWPORTS = [
   { name: 'iPhone SE (2nd) 375x667', width: 375, height: 667, mobile: true },
   { name: 'iPhone 14 390x844', width: 390, height: 844, mobile: true },
   { name: 'iPhone 14 Pro Max 430x932', width: 430, height: 932, mobile: true },
+  // Landscape is its own challenge: only ~320-390px of height for header + banner
+  // + filter bar + board.
+  { name: 'iPhone SE landscape 568x320', width: 568, height: 320, mobile: true },
+  { name: 'iPhone 14 landscape 844x390', width: 844, height: 390, mobile: true },
   { name: 'iPad mini 768x1024', width: 768, height: 1024, mobile: true },
   { name: 'iPad Pro 1024x1366', width: 1024, height: 1366, mobile: true },
   { name: 'Laptop 1280x800', width: 1280, height: 800, mobile: false },
@@ -155,11 +159,14 @@ try {
     });
 
     record(vp.name, '无横向溢出', m.scrollWidth <= m.innerWidth + 1, `${m.scrollWidth} / ${m.innerWidth}`);
-    // Header budget: ≤120px and ≤25% of the viewport, no overlapping controls.
+    // Header budget: ≤120px, and either ≤25% of the viewport or a hard cap on
+    // very short (landscape phone) viewports where any header is a large share.
+    const headerBudgetOk =
+      m.header.height <= 120 && (m.header.height / m.header.vh <= 0.25 || m.header.vh < 420);
     record(
       vp.name,
-      '顶栏高度 ≤120px 且 ≤25% 视口',
-      m.header.height <= 120 && m.header.height / m.header.vh <= 0.25,
+      '顶栏高度 ≤120px 且 ≤25% 视口（矮横屏按绝对像素）',
+      headerBudgetOk,
       `${m.header.height}px / ${m.header.vh}px (${Math.round((m.header.height / m.header.vh) * 100)}%)`,
     );
     record(vp.name, '顶栏内控件互不重叠', m.header.collisions === 0, `${m.header.collisions} collisions`);
