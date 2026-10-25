@@ -138,6 +138,7 @@ npx wrangler d1 migrations apply repoops-db --remote
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
+| **点「用 GitHub 登录」啥也没发生 / 页面像刷新了一下** | `assets.run_worker_first` 缺了 `/api/*`，SPA 回退把导航请求用 `index.html` 兜住，Worker 没执行 | 保留 `"run_worker_first": ["/api/*"]`；用 `node tests/navigation-routing.mjs <url>` 复查 |
 | `Actor migration tag precondition failed` | 同名 Worker 已存在且 Durable Object 迁移标签不同 | 删除旧 Worker 后重新 deploy，或手工统一 `migrations` 标签 |
 | `does not export class 'X' which is depended on by existing Durable Objects` | 删掉了 DO 类但历史迁移里还有它 | 在 `migrations` 里追加 `{ "tag": "v2", "deleted_classes": ["X"] }` 后再 deploy |
 | `Exceeded allowed rows read in Durable Objects free tier` | 早期版本用 DO 做限流 | 本项目已改为 D1 限流；老部署请按 `0004_rate_limits.sql` 迁移并删除 DO 绑定 |

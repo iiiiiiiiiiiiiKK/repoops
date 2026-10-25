@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2041%20E2E%20%2B%20159%20responsive%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
+[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2041%20E2E%20%2B%20159%20responsive%20%2B%208%20routing%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 [在线演示](https://repoops.852367856.dpdns.org) · [架构说明](docs/ARCHITECTURE.md) · [OAuth 配置](docs/OAUTH.md) · [部署指南](docs/DEPLOY.md) · [隐私政策](docs/PRIVACY.md)
@@ -263,6 +263,7 @@ node tests/integration/run.mjs  <url>  # 45 项 API 契约测试
 node tests/e2e/run.mjs          <url>  # 41 项浏览器 E2E（含 iPhone / iPad / 375px）
 node tests/e2e/responsive-audit.mjs <url>  # 159 项响应式几何断言（11 个视口，含 iPhone 横屏）
 node tests/oauth-wiring.mjs     <url>  # 10 项 OAuth 接线检查（无需人工点授权）
+node tests/navigation-routing.mjs <url>  # 8 项真实浏览器导航路由检查（catch SPA 回退吃掉 /api）
 node tests/oauth-ui.mjs         <url>  # 4 项连接面板检查（登录按钮 / 私有仓库开关 / Token 逃生口）
 node tests/diagnose-oauth.mjs   <url>  # 排障：真实浏览器打开 GitHub 授权页并截图
 GITHUB_TEST_TOKEN=ghp_xxx \\
@@ -280,6 +281,9 @@ GITHUB_TEST_TOKEN=ghp_xxx \
 | 浏览器 E2E | **41 / 41 通过** | 搜索、筛选、阈值重算、详情、草稿、周报数字对账、批量复制、键盘、主题、零控制台错误、连接入口与 OAuth 配置一致性 |
 | 响应式几何审计 | **159 / 159 通过** | 320 / 375 / 390 / 430 / 568 横 / 844 横 / 768 / 1024 / 1280 / 1440 / 1920 十一个视口：横向溢出、点击目标尺寸、字号、单列堆叠、详情面板是否出屏、顶栏高度预算、顶栏控件是否重叠、仓库名是否截断 |
 | OAuth 接线 | **10 / 10 通过** | 授权 URL 参数、state 随机性与 Cookie、最小 scope、redirect_uri 一致性、**client_id+secret 被 GitHub 接受**（伪造 code 返回 `bad_verification_code` 而非 `incorrect_client_credentials`）、失败后清 Cookie |
+| 导航路由 | **8 / 8 通过** | 真实浏览器导航：`/api/health` 返回 JSON、`/api/auth/login` 返回 302 并离开本站、`/api/auth/callback` 命中 Worker、未知 `/api` 路径 404、SPA 深链接仍回落首页 |
+| 连接面板 UI | **4 / 4 通过** | 登录链接 scope、私有仓库开关切到 `?private=1`、Token 逃生口聚焦、排障文案 |
+| Token 连接 UI | **5 / 5 通过** | 粘贴 Token → 建立会话 → 刷新保持 → 断开清数据 |
 | 登录态流程 | **42 / 42 通过** | 真实私有仓库（`iiiiiiiiiiiiiKK/0xKill`）授权、增量同步、配额记录、跨用户隔离、断开连接清除数据 |
 
 其中 E2E 的关键断言是**周报数字与看板卡片数逐列相等**：
@@ -310,6 +314,10 @@ npx wrangler deploy
 部署后把 GitHub OAuth App 的 **Authorization callback URL** 改成
 `https://<你的域名>/api/auth/callback`。
 
+> ⚠️ `wrangler.jsonc` 里的 `assets.run_worker_first: ["/api/*"]` **不能删**。
+> 少了它，Cloudflare 的 SPA 回退会把「浏览器导航」到 `/api/*` 的请求直接用 `index.html` 兜住，
+> Worker 根本不执行 —— 表现就是点「用 GitHub 登录」页面像刷新了一下，毫无反应。细节见下方「工程教训」。
+
 详细步骤（含自定义域名、Cron、免费额度说明）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ### 免费额度（截至本文写作时的官方数字，请以 Cloudflare 现价为准）
@@ -334,6 +342,23 @@ Exceeded allowed rows read in Durable Objects free tier.
 原因是每请求都经过一个 Durable Object 限流器（一次 get + 一次 put），而这台账号的 DO 免费额度被读爆了 —— **一个用来保护服务的组件，把服务本身弄挂了**。
 
 改法是把它降级成 D1 里的一次 UPSERT（`rate_limits` 表，固定窗口），依赖的数据库本来就在读路径上，没有引入新的失败点。这件事写进 README 是因为它比任何"最佳实践"都更有用：**防护组件必须是可失败、可降级的**。
+
+### 工程教训：`fetch()` 测不出来的路由 Bug
+
+上线后出现的第一个真实用户反馈是：「点『用 GitHub 登录』没有任何作用，自己刷新又回来了。」
+
+接口测试全绿、OAuth 凭据也验证过没问题，于是我用真实浏览器逐帧记录，发现同一个 URL 两种结果：
+
+| 请求方式 | 结果 |
+| --- | --- |
+| JS 里 `fetch('/api/auth/login')` | `302` → `github.com/login/oauth/authorize` ✅ |
+| 浏览器地址栏/链接导航 | `200 text/html` → **渲染首页** ❌ |
+
+原因是 Cloudflare Workers Static Assets 的 `not_found_handling: single-page-application`：**只对「导航请求」生效**，未命中资产时直接用 `index.html` 兜住，**Worker 根本没被执行**。而 `fetch()` 是子资源请求（`Sec-Fetch-Mode: cors`），走的是 Worker 分支 —— 所以所有基于 `fetch()` 的测试都测不到这个洞。
+
+修复是 `assets.run_worker_first: ["/api/*"]`：让 API 路径永远先交给 Worker。
+
+教训：**契约测试必须至少有一条走真实的浏览器导航**，否则"我的测试全绿"只是在验证一条用户不会走的路。现在 `tests/navigation-routing.mjs` 用真实导航覆盖了 `/api/health`、`/api/auth/login`、`/api/auth/callback`、未知 `/api` 路径，以及 SPA 深链接回退（8 项）。
 
 ## 安全与隐私
 
