@@ -5,7 +5,7 @@
  * SPA (Workers Static Assets). Route handlers are thin — they validate input,
  * enforce ownership, and delegate to the service modules.
  */
-import { ApiError, errorResponse, json, type Env } from './env';
+import { ApiError, errorResponse, json, jsonCacheable, type Env } from './env';
 import { handleCallback, handleLogin, handleLogout, handleSessionInfo, handleTokenLogin } from './auth';
 import { loadSession, requireSession } from './session';
 import {
@@ -24,6 +24,11 @@ import { DEFAULT_THRESHOLDS, type BoardThresholds, type TrackerRepo } from '../s
 /* ----------------------------- helpers ----------------------------- */
 
 const RATE_LIMIT_PER_MIN = 90;
+
+/* Demo payload: public, read-only and identical for every visitor, so it is
+   cached at the edge and never needs the database on the read path. */
+const DEMO_CACHE_SECONDS = 6 * 60 * 60;
+const DEMO_DEGRADED_CACHE_SECONDS = 5 * 60;
 const RATE_WINDOW_MS = 60_000;
 
 /**
@@ -111,14 +116,14 @@ async function requireTrackedRepo(env: Env, login: string, repoFullName: string)
 /* ------------------------------ router ------------------------------ */
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS.fetch(request);
     }
 
     try {
-      return await route(request, env, url);
+      return await route(request, env, url, ctx);
     } catch (err) {
       const response = errorResponse(err);
       if (response.status >= 500) {
@@ -156,7 +161,7 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function route(request: Request, env: Env, url: URL): Promise<Response> {
+async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, '') || '/api';
   const method = request.method.toUpperCase();
 
@@ -186,15 +191,79 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     await enforceRateLimit(env, request, 'demo', 2);
     const repoParam = url.searchParams.get('repo') ?? env.DEMO_REPO;
     const { owner, name } = parseRepoFullName(repoParam);
-    const snapshot = await loadDemoSnapshot(env, `${owner}/${name}`);
-    return json({
-      mode: 'demo',
-      repo: snapshot.repo,
-      items: snapshot.items,
-      fetchedAt: snapshot.fetchedAt,
-      stale: snapshot.stale,
-      notice: '演示数据来自公开 GitHub API，只读，不属于任何登录用户。',
+    const fullName = `${owner}/${name}`;
+
+    /*
+      The demo is public, read-only, identical for every visitor — so it should
+      never depend on the database. Three layers, cheapest first:
+
+        1. edge cache   (caches.default, 6h)  → no D1, no GitHub
+        2. D1 snapshot  (seeded / refreshed by cron)
+        3. live GitHub read                  → when D1 is unavailable
+
+      Layer 1 and 3 exist because exhausting the D1 free tier used to take the
+      whole page down with a raw `D1_ERROR` dump, even though nothing here is
+      user-specific.
+    */
+    const cache = caches.default;
+    const cacheKey = new Request(`https://repoops.internal/demo/${encodeURIComponent(fullName)}`, { method: 'GET' });
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      const body = (await cached.json()) as Record<string, unknown>;
+      return jsonCacheable(body, DEMO_CACHE_SECONDS, { 'x-repoops-cache': 'hit' });
+    }
+
+    let payload: Record<string, unknown>;
+    let degraded = false;
+    try {
+      const snapshot = await loadDemoSnapshot(env, fullName);
+      payload = {
+        mode: 'demo',
+        repo: snapshot.repo,
+        items: snapshot.items,
+        fetchedAt: snapshot.fetchedAt,
+        stale: snapshot.stale,
+        notice: '演示数据来自公开 GitHub API，只读，不属于任何登录用户。',
+      };
+    } catch (dbErr) {
+      // Storage unavailable (quota / outage): read straight from GitHub. This
+      // response is not persisted, so it is cached only briefly.
+      const snap = await fetchRepoSnapshot(env, fullName, env.GITHUB_TOKEN ?? null, { maxPages: 2 });
+      const nowIso = new Date().toISOString();
+      degraded = true;
+      payload = {
+        mode: 'demo',
+        degraded: true,
+        repo: {
+          ...snap.repo,
+          addedAt: nowIso,
+          sync: {
+            repo: fullName,
+            lastSyncAt: nowIso,
+            itemCount: snap.items.length,
+            pagesFetched: snap.pages,
+            complete: snap.complete,
+            cursor: snap.cursor,
+            errors: snap.errors,
+            rateLimit: snap.rateLimit,
+            lastRunDurationMs: null,
+            mode: 'demo',
+          },
+        },
+        items: snap.items,
+        fetchedAt: nowIso,
+        stale: false,
+        notice: `演示数据实时读取自公开 GitHub API（数据库暂时不可用，本次未写入缓存）：${
+          dbErr instanceof Error ? dbErr.message.slice(0, 120) : 'storage error'
+        }`,
+      };
+    }
+
+    const response = jsonCacheable(payload, degraded ? DEMO_DEGRADED_CACHE_SECONDS : DEMO_CACHE_SECONDS, {
+      'x-repoops-cache': 'miss',
     });
+    ctx.waitUntil(cache.put(cacheKey, response.clone()).catch(() => undefined));
+    return response;
   }
 
   // ---- authenticated workspace ----

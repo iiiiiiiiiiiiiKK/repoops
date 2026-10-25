@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OAuth + session routes.
  *
  * Scope policy (minimum necessary):
@@ -30,8 +30,21 @@ export function callbackUrl(request: Request, env: Env): string {
 }
 
 export async function handleSessionInfo(env: Env, request: Request): Promise<Response> {
-  const session = await loadSession(env, request);
+  // Session info is mostly static (app name, whether OAuth is configured, the
+  // demo repo). Only the "who am I" part needs the database — so a storage
+  // failure must not turn into "OAuth is not configured", which is what the UI
+  // used to infer from a failed request.
   const oauthConfigured = Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
+  let session = null;
+  let degraded = false;
+  let degradedReason: string | null = null;
+  try {
+    session = await loadSession(env, request);
+  } catch (err) {
+    degraded = true;
+    degradedReason = err instanceof Error ? err.message.slice(0, 200) : String(err);
+  }
+
   const info: SessionInfo = {
     authenticated: Boolean(session),
     login: session?.login ?? null,
@@ -42,6 +55,8 @@ export async function handleSessionInfo(env: Env, request: Request): Promise<Res
     appName: env.APP_NAME,
     oauthConfigured,
     demoRepo: env.DEMO_REPO,
+    degraded,
+    degradedReason,
   };
   return json(info);
 }

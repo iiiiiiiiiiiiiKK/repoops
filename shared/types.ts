@@ -149,4 +149,11 @@ export interface SessionInfo {
   appName: string;
   oauthConfigured: boolean;
   demoRepo: string;
+  /**
+   * True when the session store could not be read (quota exhausted, outage).
+   * The UI must then say "unknown", never "not configured": an infrastructure
+   * failure and a missing OAuth App are completely different problems.
+   */
+  degraded?: boolean;
+  degradedReason?: string | null;
 }

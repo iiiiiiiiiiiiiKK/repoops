@@ -152,7 +152,24 @@ export function SettingsModal({
                       跳转到 GitHub 授权页面，只申请完成任务所需的最小权限：<code>read:user</code> + <code>public_repo</code>。
                       需要访问私有仓库时勾选下面的「包含私有仓库」，会升级为 <code>repo</code> 域。
                     </p>
-                    {session?.oauthConfigured ? (
+                    {/* Degraded first: if we could not read the session at all,
+                        that diagnosis outranks the normal "you can log in" UI. */}
+                    {session?.degraded ? (
+                      <div className="notice notice--error">
+                        <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
+                        <span>
+                          无法读取当前连接状态：{session.degradedReason ? session.degradedReason.slice(0, 120) : '服务器暂时不可用'}。
+                          <br />
+                          <strong>这不代表 OAuth 未配置</strong>——部署侧的 <code>GITHUB_CLIENT_ID</code> /{' '}
+                          <code>GITHUB_CLIENT_SECRET</code> 已存在，是数据库读取失败导致读不到会话。
+                          <br />
+                          数据库恢复后登录即可用；也可以先粘贴下面的只读 Token。
+                          <a className="btn btn--sm" style={{ marginLeft: 6 }} href="/api/auth/login">
+                            仍要尝试 GitHub 登录
+                          </a>
+                        </span>
+                      </div>
+                    ) : session?.oauthConfigured ? (
                       <>
                         <div className="row" style={{ alignItems: 'center' }}>
                           <a
@@ -202,12 +219,31 @@ export function SettingsModal({
                           </span>
                         </div>
                       </>
-                    ) : (
+                    ) : session && !session.degraded ? (
                       <div className="notice notice--warn">
                         <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
                         <span>
                           此部署没有配置 <code>GITHUB_CLIENT_ID</code> / <code>GITHUB_CLIENT_SECRET</code>，OAuth 不可用。
                           可以继续使用公开演示数据，或在下方粘贴一个只读 Token。配置方法见 README 的「OAuth 配置指南」。
+                        </span>
+                      </div>
+                    ) : (
+                      /* Session state unknown (server/storage failure). Saying
+                         "OAuth is not configured" here would be a lie — that is
+                         exactly the bug that made a D1 quota error look like a
+                         configuration problem. */
+                      <div className="notice notice--error">
+                        <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
+                        <span>
+                          无法读取当前连接状态：{session?.degradedReason ? session.degradedReason.slice(0, 120) : '服务器暂时不可用'}。
+                          <br />
+                          <strong>这不代表 OAuth 未配置</strong>——部署侧的 <code>GITHUB_CLIENT_ID</code> /{' '}
+                          <code>GITHUB_CLIENT_SECRET</code> 已存在，是数据库读取失败导致读不到会话。
+                          <br />
+                          下面两种方式在数据库恢复后都可用：
+                          <a className="btn btn--sm" style={{ marginLeft: 6 }} href="/api/auth/login">
+                            仍要尝试 GitHub 登录
+                          </a>
                         </span>
                       </div>
                     )}

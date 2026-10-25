@@ -82,6 +82,9 @@ export default function App() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // True when the server could not read its session store (D1 quota / outage).
+  // Distinct from "OAuth is not configured" — the UI must never conflate them.
+  const [sessionDegraded, setSessionDegraded] = useState<string | null>(null);
   // Inline "add your first repo" form shown right after connecting.
   const [firstRepoInput, setFirstRepoInput] = useState('');
   const [firstRepoBusy, setFirstRepoBusy] = useState(false);
@@ -98,6 +101,7 @@ export default function App() {
         const info = await api.session();
         if (cancelled) return;
         setSession(info);
+        setSessionDegraded(info.degraded ? (info.degradedReason ?? '会话存储不可用') : null);
         if (info.authenticated) {
           const { repos: list } = await api.repos();
           if (cancelled) return;
@@ -447,6 +451,24 @@ export default function App() {
                 >
                   重试
                 </button>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/*
+          Storage-level degradation is reported on its own, and explicitly does
+          NOT blame the OAuth configuration — that confusion is exactly what made
+          a D1 quota error look like "OAuth 未配置".
+        */}
+        {sessionDegraded && (
+          <div className="banner-slot">
+            <div className="notice notice--error">
+              <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
+              <span>
+                登录态读取失败：数据库读取配额已用尽（Cloudflare D1 免费额度，UTC 次日 00:00 自动恢复）。
+                <strong>GitHub 登录配置是正常的</strong>，这只是数据库额度问题：演示数据仍可浏览，你自己的仓库需要等额度恢复。
+                <span className="faint">（{sessionDegraded.slice(0, 90)}）</span>
               </span>
             </div>
           </div>
