@@ -40,6 +40,11 @@ const RATE_WINDOW_MS = 60_000;
  */
 async function enforceRateLimit(env: Env, request: Request, bucket: string, cost = 1): Promise<void> {
   if (!env.DB) return; // no DB binding (unit tests)
+  // Per-IP counters are the standard granularity, with one honest caveat: a
+  // dual-stack client can reach us over IPv4 on one request and IPv6 on the
+  // next, which means it gets one budget per address family. We accept that
+  // rather than fingerprinting browsers — the goal is stopping a runaway loop,
+  // not tracking users.
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
   const key = `${bucket}:${ip}`;
   const windowStart = Math.floor(Date.now() / RATE_WINDOW_MS) * RATE_WINDOW_MS;

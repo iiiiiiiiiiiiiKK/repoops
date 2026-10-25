@@ -110,8 +110,21 @@ curl -s https://<你的域名>/api/session | jq
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| `redirect_uri_mismatch` | OAuth App 里的 callback 与部署域名不一致 | 改成 `https://<域名>/api/auth/callback` |
+| 点「用 GitHub 登录」后**没有任何反应 / 空白页 / 刷新又回到站点** | `github.com` 在你当前网络打不开，或浏览器里没有登录 GitHub | 先直接用浏览器打开 `https://github.com/login` 确认可用；打不开就改用只读 Token（只依赖 `api.github.com`） |
+| 跳到 GitHub 但显示 **Sign in to GitHub**，没有授权按钮 | 该浏览器没有 GitHub 登录态 | 先在 github.com 登录，再回到站点点登录 |
+| `redirect_uri_mismatch` | OAuth App 里的 callback 与部署域名不一致 | 改成 `https://<域名>/api/auth/callback`（不要结尾斜杠、必须 https） |
 | `?auth=error&reason=state_mismatch` | 中间隔太久（>10 分钟）或 cookie 被清 | 重新点登录 |
 | `500 MISSING_SECRET` | 没配 `SESSION_SECRET` | `wrangler secret put SESSION_SECRET` |
-| 登录成功但仓库读不到 | 只给了 `public_repo` 却要看私有仓库 | 用 `/api/auth/login?private=1` 重新授权 |
+| 登录成功但仓库读不到 | 只给了 `public_repo` 却要看私有仓库 | 勾选设置里的「包含私有仓库」，或用 `/api/auth/login?private=1` 重新授权 |
 | `401 TOKEN_INVALID` | 用户在 GitHub 撤销了授权 | 重新连接 |
+
+### 用一条命令定位「到底是哪一步坏了」
+
+```bash
+node tests/oauth-wiring.mjs https://<你的域名>
+node tests/diagnose-oauth.mjs https://<你的域名>   # 会用真实浏览器打开 GitHub 授权页并截图
+```
+
+`oauth-wiring.mjs` 不需要任何人点授权就能判断：授权 URL 参数对不对、`redirect_uri` 是否一致、**client_secret 是否被 GitHub 接受**（伪造 code 若返回 `bad_verification_code` 就说明凭据没问题；`incorrect_client_credentials` 才说明 secret 错了）。
+
+`diagnose-oauth.mjs` 会告诉你 GitHub 那边实际渲染了什么：是登录页（说明一切正常，只是没登录）、`Application not found`（client_id 错）、还是 `redirect_uri MUST match`（回调地址不一致），并把截图存到 `tests/e2e/screenshots/github-authorize.png`。

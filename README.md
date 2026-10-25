@@ -263,6 +263,8 @@ node tests/integration/run.mjs  <url>  # 45 项 API 契约测试
 node tests/e2e/run.mjs          <url>  # 41 项浏览器 E2E（含 iPhone / iPad / 375px）
 node tests/e2e/responsive-audit.mjs <url>  # 159 项响应式几何断言（11 个视口，含 iPhone 横屏）
 node tests/oauth-wiring.mjs     <url>  # 10 项 OAuth 接线检查（无需人工点授权）
+node tests/oauth-ui.mjs         <url>  # 4 项连接面板检查（登录按钮 / 私有仓库开关 / Token 逃生口）
+node tests/diagnose-oauth.mjs   <url>  # 排障：真实浏览器打开 GitHub 授权页并截图
 GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/live-auth.mjs      <url>  # 42 项登录态真实流程测试
 ```

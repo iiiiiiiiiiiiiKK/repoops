@@ -37,6 +37,9 @@ export function SettingsModal({
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Opt-in before redirecting: requesting `repo` scope unprompted would violate
+  // least privilege, so private-repo access is an explicit checkbox.
+  const [wantPrivate, setWantPrivate] = useState(false);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -147,13 +150,58 @@ export function SettingsModal({
                     <span className="field__label">方式一 · GitHub OAuth（推荐）</span>
                     <p className="dim" style={{ fontSize: 12.5, marginTop: 0 }}>
                       跳转到 GitHub 授权页面，只申请完成任务所需的最小权限：<code>read:user</code> + <code>public_repo</code>。
-                      需要访问私有仓库时可在授权链接上加 <code>?private=1</code>，那会升级为 <code>repo</code> 域。
+                      需要访问私有仓库时勾选下面的「包含私有仓库」，会升级为 <code>repo</code> 域。
                     </p>
                     {session?.oauthConfigured ? (
-                      <a className="btn btn--primary" href="/api/auth/login">
-                        <IconGithub size={14} />
-                        用 GitHub 登录
-                      </a>
+                      <>
+                        <div className="row" style={{ alignItems: 'center' }}>
+                          <a
+                            className="btn btn--primary"
+                            href={wantPrivate ? '/api/auth/login?private=1' : '/api/auth/login'}
+                            data-testid="oauth-login"
+                          >
+                            <IconGithub size={14} />
+                            用 GitHub 登录
+                          </a>
+                          <label className="row" style={{ gap: 6, fontSize: 12, color: 'var(--text-dim)', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              data-testid="oauth-private"
+                              checked={wantPrivate}
+                              onChange={(e) => setWantPrivate(e.target.checked)}
+                              style={{ accentColor: 'var(--accent)' }}
+                            />
+                            包含私有仓库
+                          </label>
+                        </div>
+                        {/*
+                          The redirect goes to github.com. If that host is slow or
+                          blocked (common on some networks), the browser shows a
+                          blank tab and the user is left guessing — so state the
+                          failure mode and the way out right here.
+                        */}
+                        <div className="notice" style={{ marginTop: 10, fontSize: 11.5 }}>
+                          <span>
+                            点了没反应或看到空白页？说明 <code>github.com</code> 在你当前网络打不开，或浏览器里还没登录 GitHub。
+                            可以先用{' '}
+                            <a href="https://github.com/login" target="_blank" rel="noopener noreferrer">
+                              这个链接
+                            </a>{' '}
+                            确认能否打开并登录，或者直接用下面的只读 Token —— 它只访问 <code>api.github.com</code>，不需要打开 GitHub 网页。
+                            <button
+                              className="btn btn--sm"
+                              style={{ marginLeft: 6 }}
+                              onClick={() => {
+                                const el = document.getElementById('token-input') as HTMLInputElement | null;
+                                el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                                el?.focus();
+                              }}
+                            >
+                              改用 Token 登录
+                            </button>
+                          </span>
+                        </div>
+                      </>
                     ) : (
                       <div className="notice notice--warn">
                         <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
@@ -174,6 +222,8 @@ export function SettingsModal({
                     </p>
                     <div className="row">
                       <input
+                        id="token-input"
+                        data-testid="token-input"
                         className="select"
                         style={{ flex: 1, minWidth: 180, padding: '7px 9px', fontFamily: 'var(--font-mono)', fontSize: 11.5 }}
                         type="password"

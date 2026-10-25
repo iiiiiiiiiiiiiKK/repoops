@@ -318,10 +318,18 @@ export default function App() {
   const authBanner = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const auth = params.get('auth');
-    if (!auth) return null;
-    const reason = params.get('reason');
-    window.history.replaceState({}, '', window.location.pathname);
-    return { ok: auth === 'ok', reason };
+    if (auth) {
+      const reason = params.get('reason');
+      window.history.replaceState({}, '', window.location.pathname);
+      return { ok: auth === 'ok', reason };
+    }
+    // Landed back here from github.com without an `auth` result: the redirect or
+    // the token exchange never completed (blocked network, cancelled consent, or
+    // a stale state cookie). Say so instead of silently showing the demo.
+    if (typeof document !== 'undefined' && /(^|\.)github\.com$/.test(new URL(document.referrer || 'https://x.invalid').hostname)) {
+      return { ok: false, reason: 'interrupted' as string | null };
+    }
+    return null;
   }, []);
 
   /* --------------------------------- render ------------------------------ */
@@ -387,9 +395,19 @@ export default function App() {
             <div className={`notice ${authBanner.ok ? 'notice--ok' : 'notice--error'}`}>
               <IconWarn size={13} style={{ flex: 'none', marginTop: 2 }} />
               <span>
-                {authBanner.ok
-                  ? 'GitHub 授权成功，正在同步你的仓库列表。'
-                  : `GitHub 授权失败：${authBanner.reason ?? '未知原因'}。可以重试，或改用只读 Token 连接。`}
+                {authBanner.ok ? (
+                  'GitHub 授权成功，正在同步你的仓库列表。'
+                ) : authBanner.reason === 'interrupted' ? (
+                  <>
+                    从 GitHub 回来了，但授权没有完成 —— 通常是因为 <code>github.com</code> 在你当前网络打不开、页面被中断，或者你在
+                    GitHub 上取消了授权。
+                    <button className="btn btn--sm" style={{ marginLeft: 6 }} onClick={() => setSettingsOpen(true)}>
+                      改用只读 Token 连接
+                    </button>
+                  </>
+                ) : (
+                  `GitHub 授权失败：${authBanner.reason ?? '未知原因'}。可以重试，或改用只读 Token 连接。`
+                )}
               </span>
             </div>
           </div>

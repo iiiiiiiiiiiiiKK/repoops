@@ -174,15 +174,29 @@ check('SPA 深链接回落到 index.html', spaFallback.status === 200 && (await 
 
 /* ------------------------------------------------------------- rate limit */
 
-// Fire in bursts so the requests land inside a single 60s window. A purely
-// sequential loop can straddle a window boundary and never exceed the limit.
+// Fire in bursts so the requests land inside one 60s window (a sequential loop
+// can straddle a boundary and never trip the counter).
+//
+// Two honest caveats baked into the numbers below:
+//  - The limiter is per-IP. A dual-stack client shows up over IPv4 on some
+//    requests and IPv6 on others, so one burst can be split across two counters
+//    and the effective ceiling doubles. Hence the generous attempt budget.
+//  - Hammering a Worker from a home connection occasionally times out; a
+//    dropped connection is not a product failure, so failures are counted and
+//    tolerated instead of aborting the run.
+const LIMIT_PER_MIN = 90;
 let sawLimit = false;
-let hitCount = 0;
-for (let burst = 0; burst < 8 && !sawLimit; burst += 1) {
-  const responses = await Promise.all(
-    Array.from({ length: 20 }, () => fetch(BASE + '/api/session')),
-  );
-  hitCount += responses.length;
+let httpResponses = 0;
+let netErrors = 0;
+
+for (let burst = 0; burst < 16 && !sawLimit; burst += 1) {
+  const settled = await Promise.allSettled(Array.from({ length: 15 }, () => fetch(BASE + '/api/session')));
+  const responses = [];
+  for (const s of settled) {
+    if (s.status === 'fulfilled') responses.push(s.value);
+    else netErrors += 1;
+  }
+  httpResponses += responses.length;
   const limited = responses.find((r) => r.status === 429);
   if (limited) {
     sawLimit = true;
@@ -190,10 +204,20 @@ for (let burst = 0; burst < 8 && !sawLimit; burst += 1) {
     check('超限返回 LOCAL_RATE_LIMITED', body?.error?.code === 'LOCAL_RATE_LIMITED', body?.error?.code);
     check('限流响应带 resetAt 提示', Boolean(body?.error?.details?.resetAt), body?.error?.details?.resetAt);
   }
-  // Drain bodies so sockets are reused.
   await Promise.all(responses.map((r) => r.text().catch(() => '')));
+  // Tiny pause keeps the local socket pool healthy without spanning a window.
+  await new Promise((r) => setTimeout(r, 120));
 }
-check('公共接口有速率限制（连续请求最终被拦截）', sawLimit, `在 ${hitCount} 次请求后命中限制`);
+
+if (httpResponses === 0) {
+  console.log(`SKIP  限流检查：${netErrors} 次请求全部连接失败，本机网络无法完成压测`);
+} else {
+  check(
+    '公共接口有速率限制（连续请求最终被拦截）',
+    sawLimit,
+    `${httpResponses} 次 HTTP 响应后命中（上限 ${LIMIT_PER_MIN}/分钟/IP；双栈客户端 IPv4/IPv6 分开计数，网络错误 ${netErrors} 次）`,
+  );
+}
 
 /* ------------------------------------------------------------------ summary */
 
