@@ -180,8 +180,27 @@ try {
   await page.getByRole('button', { name: '设置与连接' }).click();
   await page.waitForSelector('[data-testid="settings-modal"]');
   record('设置弹窗可打开', true);
-  const oauthNotice = await page.locator('[data-testid="settings-modal"]').textContent();
-  record('OAuth 未配置时给出明确提示（不假装可用）', /GITHUB_CLIENT_ID|用 GitHub 登录/.test(oauthNotice ?? ''));
+  // The connect tab must reflect the deployment's real OAuth state instead of
+  // always promising a working button: with secrets configured it offers GitHub
+  // login, without them it explains why and points at the token fallback.
+  const oauthState = await page.evaluate(async () => {
+    const session = await (await fetch('/api/session')).json();
+    const modal = document.querySelector('[data-testid="settings-modal"]');
+    const login = [...modal.querySelectorAll('a')].find((a) =>
+      (a.getAttribute('href') ?? '').startsWith('/api/auth/login'),
+    );
+    return {
+      configured: Boolean(session.oauthConfigured),
+      hasLoginButton: Boolean(login),
+      text: modal.textContent ?? '',
+    };
+  });
+  record(
+    '连接入口与部署的 OAuth 配置一致（不假装可用）',
+    oauthState.configured ? oauthState.hasLoginButton : /GITHUB_CLIENT_ID|OAuth 不可用/.test(oauthState.text),
+    `oauthConfigured=${oauthState.configured} loginButton=${oauthState.hasLoginButton}`,
+  );
+  record('保留了只读 Token 备用入口', /Token/.test(oauthState.text));
 
   await page.getByRole('tab', { name: '关于' }).click();
   const aboutText = await page.locator('[data-testid="settings-modal"]').textContent();

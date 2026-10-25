@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2040%20E2E%20%2B%20159%20responsive%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
+[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2041%20E2E%20%2B%20159%20responsive%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 [在线演示](https://repoops.852367856.dpdns.org) · [架构说明](docs/ARCHITECTURE.md) · [OAuth 配置](docs/OAUTH.md) · [部署指南](docs/DEPLOY.md) · [隐私政策](docs/PRIVACY.md)
@@ -151,8 +151,9 @@ RepoOps 把仓库里的事项压成五个队列：
 
 打开即是演示模式：加载 `honojs/hono` 的真实公开数据（300 条 Issue/PR），只读、无需登录、每 6 小时自动刷新。
 
-- 想用自己的仓库？点右上角 ⚙ → 「连接」→ 用 GitHub 登录，或粘贴一个只读 PAT。
+- 想用自己的仓库？点右上角 ⚙ → 「连接」→ **用 GitHub 登录**（该部署已配置 OAuth App），或粘贴一个只读 PAT。
 - 演示数据永远带橙色「演示数据」角标，且不会写入任何用户的工作区。
+- 需要读私有仓库时用 `/api/auth/login?private=1`，scope 会从 `read:user public_repo` 提升到 `read:user repo`。
 
 ## 技术栈
 
@@ -259,8 +260,9 @@ npm run typecheck                     # 前端 + Worker 双 tsconfig 严格类�
 npm run build                         # 生产构建
 
 node tests/integration/run.mjs  <url>  # 45 项 API 契约测试
-node tests/e2e/run.mjs          <url>  # 40 项浏览器 E2E（含 iPhone / iPad / 375px）
+node tests/e2e/run.mjs          <url>  # 41 项浏览器 E2E（含 iPhone / iPad / 375px）
 node tests/e2e/responsive-audit.mjs <url>  # 159 项响应式几何断言（11 个视口，含 iPhone 横屏）
+node tests/oauth-wiring.mjs     <url>  # 10 项 OAuth 接线检查（无需人工点授权）
 GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/live-auth.mjs      <url>  # 42 项登录态真实流程测试
 ```
@@ -270,9 +272,10 @@ GITHUB_TEST_TOKEN=ghp_xxx \
 | 套件 | 结果 | 覆盖内容 |
 | --- | --- | --- |
 | 单元测试 | **58 / 58 通过** | 分桶规则、筛选、排序、周报数字、草稿生成、SSRF 防护、分页解析、仓库名校验 |
-| API 集成 | **45 / 45 通过** | 401/400/404/429 边界、SSRF 拒绝、演示数据隔离、限流生效（91 次后拦截）、无写接口 |
-| 浏览器 E2E | **40 / 40 通过** | 搜索、筛选、阈值重算、详情、草稿、周报数字对账、批量复制、键盘、主题、零控制台错误 |
+| API 集成 | **45 / 45 通过** | 401/400/404/429 边界、SSRF 拒绝、演示数据隔离、限流生效（100 次后拦截）、无写接口 |
+| 浏览器 E2E | **41 / 41 通过** | 搜索、筛选、阈值重算、详情、草稿、周报数字对账、批量复制、键盘、主题、零控制台错误、连接入口与 OAuth 配置一致性 |
 | 响应式几何审计 | **159 / 159 通过** | 320 / 375 / 390 / 430 / 568 横 / 844 横 / 768 / 1024 / 1280 / 1440 / 1920 十一个视口：横向溢出、点击目标尺寸、字号、单列堆叠、详情面板是否出屏、顶栏高度预算、顶栏控件是否重叠、仓库名是否截断 |
+| OAuth 接线 | **10 / 10 通过** | 授权 URL 参数、state 随机性与 Cookie、最小 scope、redirect_uri 一致性、**client_id+secret 被 GitHub 接受**（伪造 code 返回 `bad_verification_code` 而非 `incorrect_client_credentials`）、失败后清 Cookie |
 | 登录态流程 | **42 / 42 通过** | 真实私有仓库（`iiiiiiiiiiiiiKK/0xKill`）授权、增量同步、配额记录、跨用户隔离、断开连接清除数据 |
 
 其中 E2E 的关键断言是**周报数字与看板卡片数逐列相等**：
