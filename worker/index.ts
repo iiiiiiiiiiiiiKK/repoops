@@ -21,31 +21,60 @@ import {
 import { buildWeeklyReport } from '../shared/board';
 import { DEFAULT_THRESHOLDS, type BoardThresholds, type TrackerRepo } from '../shared/types';
 
-export { RateLimiter } from './rate-limiter';
-
 /* ----------------------------- helpers ----------------------------- */
 
 const RATE_LIMIT_PER_MIN = 90;
+const RATE_WINDOW_MS = 60_000;
 
+/**
+ * Fixed-window rate limiter backed by D1.
+ *
+ * It used to be a Durable Object, which was a mistake: one get + one put per
+ * API call, per client IP, burned through the DO free tier's row reads and took
+ * the entire API down with "Exceeded allowed rows read in Durable Objects free
+ * tier". A protection mechanism must never be able to break the thing it
+ * protects, so the counter now lives in the database we already read from.
+ *
+ * One UPSERT per request, strongly consistent (D1 writes are serialised per
+ * database), and expired windows are swept opportunistically.
+ */
 async function enforceRateLimit(env: Env, request: Request, bucket: string, cost = 1): Promise<void> {
-  if (!env.RATE_LIMITER) return; // limiter binding absent in unit tests
+  if (!env.DB) return; // no DB binding (unit tests)
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
-  const id = env.RATE_LIMITER.idFromName(`${bucket}:${ip}`);
-  const stub = env.RATE_LIMITER.get(id);
-  const url = new URL('https://rate-limiter.internal/check');
-  url.searchParams.set('limit', String(RATE_LIMIT_PER_MIN));
-  url.searchParams.set('windowMs', '60000');
-  url.searchParams.set('bucket', bucket);
-  url.searchParams.set('cost', String(cost));
-  const res = await stub.fetch(url.toString());
-  const result = (await res.json()) as { allowed: boolean; remaining: number; resetAt: string; limit: number };
-  if (!result.allowed) {
-    throw new ApiError(
-      429,
-      'LOCAL_RATE_LIMITED',
-      `Too many requests from this client. Try again after ${result.resetAt}.`,
-      result,
-    );
+  const key = `${bucket}:${ip}`;
+  const windowStart = Math.floor(Date.now() / RATE_WINDOW_MS) * RATE_WINDOW_MS;
+
+  let count: number;
+  try {
+    const row = await env.DB.prepare(
+      `INSERT INTO rate_limits (bucket, window_start, count) VALUES (?, ?, ?)
+       ON CONFLICT(bucket, window_start) DO UPDATE SET count = count + excluded.count
+       RETURNING count`,
+    )
+      .bind(key, windowStart, cost)
+      .first<{ count: number }>();
+    count = row?.count ?? cost;
+  } catch {
+    // Never fail a request because the limiter itself is unavailable.
+    return;
+  }
+
+  if (count > RATE_LIMIT_PER_MIN) {
+    const resetAt = new Date(windowStart + RATE_WINDOW_MS).toISOString();
+    throw new ApiError(429, 'LOCAL_RATE_LIMITED', `Too many requests from this client. Try again after ${resetAt}.`, {
+      allowed: false,
+      limit: RATE_LIMIT_PER_MIN,
+      remaining: 0,
+      resetAt,
+    });
+  }
+
+  // Sweep windows older than an hour on ~1% of requests.
+  if (Math.random() < 0.01) {
+    await env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?')
+      .bind(windowStart - 3_600_000)
+      .run()
+      .catch(() => undefined);
   }
 }
 

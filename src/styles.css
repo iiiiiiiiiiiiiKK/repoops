@@ -644,7 +644,10 @@ button {
   overflow: auto;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(276px, 1fr);
+  /* 185px is the smallest column that still fits a two-line title plus labels;
+     5 columns therefore fit a 1024px tablet and a 1280px laptop without
+     horizontal scrolling. */
+  grid-auto-columns: minmax(185px, 1fr);
   gap: 12px;
   padding: 14px;
   align-items: start;
@@ -840,17 +843,32 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
 }
 
 .detail__head {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   flex: none;
+  /* Leaves room for the absolutely positioned close button. */
+  padding-right: 48px;
 }
 .detail__top {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  min-width: 0;
+}
+
+/* The close button is pinned to the panel corner instead of living in the
+   header flex row. Inside the row, later siblings (chips, long titles) could
+   paint over it and swallow the click, making it unreachable. */
+.detail__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  background: var(--bg-elev);
 }
 .detail__kind {
   font-family: var(--font-mono);
@@ -1210,8 +1228,7 @@ button {
 @media (max-width: 980px) {
   .app {
     grid-template-columns: 1fr;
-  }
-  .sidebar {
+  }  .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
     width: 270px;
@@ -1241,6 +1258,89 @@ button {
   }
 }
 
+@media (max-width: 1024px) {
+  /* Below 1025px five columns cannot fit side by side without horizontal
+     scrolling (185px x 5 + gaps + padding ≈ 1000px), so the board becomes one
+     vertical stack. The whole document scrolls instead of an inner container:
+     with a fixed 100dvh shell the banner + toolbar could otherwise squeeze the
+     board down to a few dozen pixels. */
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .app__main,
+  .app__body,
+  .board-area {
+    min-height: 0;
+    overflow: visible;
+  }
+  .board-area {
+    flex: 1 0 auto;
+  }
+  /*
+    Flex/grid items default to `min-width: auto`, i.e. they refuse to shrink
+    below their content's min-content width. A single long card title was
+    therefore able to widen the whole stack to ~995px inside a 390px viewport
+    (which is also what made the pinned close button land off-screen and
+    unclickable). Every box on the stacking path needs an explicit 0.
+  */
+  .board-area,
+  .toolbar,
+  .board,
+  .column,
+  .column__body,
+  .column__head,
+  .card,
+  .card__top,
+  .card__foot,
+  .card__labels {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .card__foot {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .card__title {
+    overflow-wrap: anywhere;
+  }
+  .board {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    grid-auto-flow: row;
+    grid-template-columns: none;
+    grid-auto-columns: auto;
+    padding: 10px;
+    gap: 10px;
+    align-items: stretch;
+    overflow: visible;
+  }
+  .column {
+    /* flex:none stops the board's flex container from squeezing every column
+       down to a few pixels, which made stacked cards overlap the next column. */
+    flex: 0 0 auto;
+    display: block;
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+  }
+  .column__head {
+    position: static;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .column__body {
+    display: flex;
+    flex-direction: column;
+    max-height: none;
+    height: auto;
+    overflow: visible;
+    padding-bottom: 8px;
+  }
+}
+
 @media (max-width: 720px) {
   :root {
     --topbar-h: 52px;
@@ -1261,50 +1361,26 @@ button {
   .search__kbd {
     display: none;
   }
+  /* One scrollable strip: keeps the board tall on small screens. Wrapping the
+     toolbar instead would eat most of a 320px viewport. */
   .toolbar {
     padding: 7px 10px;
     gap: 6px;
-    overflow-x: auto;
     flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
   .toolbar::-webkit-scrollbar {
     display: none;
   }
   .toolbar__group {
     flex: none;
+    flex-wrap: nowrap;
   }
-  /* Single scrolling column of stacks: no sticky headers, no nested scroll. */
-  .board {
-    display: flex;
-    flex-direction: column;
-    grid-auto-flow: row;
-    grid-template-columns: none;
-    grid-auto-columns: auto;
-    padding: 10px;
-    gap: 10px;
-    align-items: stretch;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-  .column {
+  .toolbar__divider {
     display: block;
-    width: 100%;
-    max-height: none;
-    min-height: 0;
-    overflow: visible;
-  }
-  .column__head {
-    position: static;
-    border-radius: var(--radius) var(--radius) 0 0;
-  }
-  .column__body {
-    display: flex;
-    flex-direction: column;
-    max-height: none;
-    height: auto;
-    overflow: visible;
-    padding-bottom: 8px;
   }
   .detail__title {
     font-size: 16px;
@@ -1352,6 +1428,18 @@ button {
   .card__check,
   .tab {
     min-height: 34px;
+  }
+  /* Filter chips and selects are the smallest controls in the UI; on touch they
+     need a real tap target rather than the 21px desktop density. */
+  .chip,
+  .select {
+    min-height: 30px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .toolbar .chip,
+  .toolbar .select {
+    min-height: 32px;
   }
   .card {
     padding: 10px 11px;

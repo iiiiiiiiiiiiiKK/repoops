@@ -22,10 +22,10 @@
       "migrations_dir": "worker/migrations"
     }
   ],
-  "durable_objects": {
-    "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RateLimiter"] },
+    { "tag": "v2", "deleted_classes": ["RateLimiter"] }
+  ],
   "vars": {
     "APP_NAME": "RepoOps",
     "DEMO_REPO": "honojs/hono",

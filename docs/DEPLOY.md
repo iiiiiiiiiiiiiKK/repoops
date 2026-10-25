@@ -138,7 +138,9 @@ npx wrangler d1 migrations apply repoops-db --remote
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| `deploy` 报 `Actor migration tag precondition failed` | 同名 Worker 已存在且 Durable Object 迁移标签不同 | 删除旧 Worker 后重新 deploy，或手工统一 `migrations` 标签 |
+| `Actor migration tag precondition failed` | 同名 Worker 已存在且 Durable Object 迁移标签不同 | 删除旧 Worker 后重新 deploy，或手工统一 `migrations` 标签 |
+| `does not export class 'X' which is depended on by existing Durable Objects` | 删掉了 DO 类但历史迁移里还有它 | 在 `migrations` 里追加 `{ "tag": "v2", "deleted_classes": ["X"] }` 后再 deploy |
+| `Exceeded allowed rows read in Durable Objects free tier` | 早期版本用 DO 做限流 | 本项目已改为 D1 限流；老部署请按 `0004_rate_limits.sql` 迁移并删除 DO 绑定 |
 | `This Worker does not exist on your account` | 首次部署时 workers.dev 子域未启用 | Dashboard 里启用 workers.dev，或直接绑自定义域名 |
 | 登录 `500 MISSING_SECRET` | 未设 `SESSION_SECRET` | `npx wrangler secret put SESSION_SECRET` |
 | `/api/demo` 返回 `429 RATE_LIMITED` | 匿名 GitHub 配额用尽 | 配 `GITHUB_TOKEN` 或按第 5 步播种 |
@@ -161,9 +163,10 @@ npx wrangler tail repoops --format pretty
 | Workers 请求 | 100,000/天 | 静态资源请求也算，但同源命中缓存后很低 |
 | Workers CPU | 10 ms/请求 | 本项目的路由与 JSON 处理远低于此；GitHub 调用是 IO 等待，不占 CPU |
 | D1 存储 | 5 GB | 300 条缓存 ≈ 0.6 MB，可存约 250 个仓库快照 |
-| D1 行读取 | 500 万/天 | 打开一次看板读一个仓库的行 |
-| Durable Object | 有免费额度，按请求+存储计费 | 每 API 请求 1 次 |
+| D1 行读取 | 500 万/天 | 打开一次看板读一个仓库的行；限流计数每请求 1 行 |
 | Cron Triggers | 免费 | 每天 4 次 |
+
+> 限流计数为什么放 D1 而不是 Durable Object：早期版本用 DO 做限流，每次请求一次 get + 一次 put，把 DO 免费额度的行读吃光后整个 API 返回 500。防护组件不应该能弄挂被保护的服务，所以改成 D1 里的一次 UPSERT（详见 README 的「工程教训」）。
 
 **不承诺「永久免费无限使用」**：如果仓库 Issue 数上万、或日活用户超出额度，会产生费用。生产使用前请自行核算。
 

@@ -78,9 +78,15 @@ for (const path of files) {
   if (remoteBlobs.get(path) !== sha) changed.push({ path, buf, sha });
 }
 
-console.log(`tracked files: ${files.length} · changed: ${changed.length}`);
+// Files that exist on the remote but are no longer tracked locally must be
+// deleted from the tree (a `null` sha removes the entry).
+const tracked = new Set(files);
+const deleted = [...remoteBlobs.keys()].filter((p) => !tracked.has(p));
+
+console.log(`tracked files: ${files.length} · changed: ${changed.length} · deleted: ${deleted.length}`);
 for (const c of changed) console.log(`  M ${c.path}`);
-if (changed.length === 0) {
+for (const d of deleted) console.log(`  D ${d}`);
+if (changed.length === 0 && deleted.length === 0) {
   console.log('nothing to push');
   process.exit(0);
 }
@@ -101,7 +107,10 @@ const tree = await gh('/git/trees', {
   method: 'POST',
   body: JSON.stringify({
     base_tree: baseTreeSha,
-    tree: changed.map((c) => ({ path: c.path, mode: '100644', type: 'blob', sha: c.newSha })),
+    tree: [
+      ...changed.map((c) => ({ path: c.path, mode: '100644', type: 'blob', sha: c.newSha })),
+      ...deleted.map((path) => ({ path, mode: '100644', type: 'blob', sha: null })),
+    ],
   }),
 });
 

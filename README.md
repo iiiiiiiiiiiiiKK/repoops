@@ -128,7 +128,7 @@ RepoOps 把仓库里的事项压成五个队列：
 | 样式 | 手写 CSS + 设计变量 | 一个 19KB 的 CSS 文件搞定深色/浅色与响应式，没有 Tailwind 的构建依赖 |
 | 服务端 | Cloudflare Workers（单文件路由） | 与静态资源同源部署，OAuth 回调不需要额外域名 |
 | 数据库 | Cloudflare D1（SQLite） | 会话、仓库缓存、同步状态、周报快照 |
-| 限流 | Durable Object | 强一致计数，避免并发请求绕过限流 |
+| 限流 | D1 固定窗口计数 | 与缓存同库，一次 UPSERT；不必为限流引入 Durable Object（详见「工程教训」） |
 | 定时任务 | Workers Cron Triggers | 每 6 小时预热演示缓存、清理过期会话 |
 | 测试 | Vitest + Playwright（`playwright-core`） | 单元测试跑纯函数，E2E 跑真实浏览器 |
 | 部署 | Wrangler | 一条命令完成构建 + 上传 + 绑定 |
@@ -147,7 +147,7 @@ flowchart LR
         R["API Router<br/>/api/*"]
         A["OAuth + Session<br/>AES-256-GCM 加密"]
         S["Sync Service<br/>分页 · 增量 · 缓存"]
-        L["RateLimiter<br/>Durable Object"]
+        L["Rate limiter<br/>D1 fixed window"]
         C["Cron<br/>每 6 小时"]
     end
 
@@ -275,11 +275,22 @@ npx wrangler deploy
 | --- | --- | --- |
 | Workers 请求 | 100,000 次/天 | 每次页面加载约 2–3 次 |
 | D1 存储 | 5 GB | 每 300 条缓存约 0.6 MB |
-| D1 读 | 500 万行/天 | 打开看板读一次仓库的缓存行 |
-| Durable Object | 有免费额度，按请求计费 | 每个 API 请求 1 次 |
+| D1 读 | 500 万行/天 | 打开看板读一次仓库的缓存行；限流计数每请求 1 行 |
 | Cron | 免费 | 每天 4 次 |
 
 个人或小团队维护十几个仓库完全落在免费额度内；如果仓库 Issue 上万，请参考下方「已知限制」。
+
+### 工程教训：限流不该拖垮产品
+
+线上跑了几小时后 API 整体 500，日志只有一句：
+
+```
+Exceeded allowed rows read in Durable Objects free tier.
+```
+
+原因是每请求都经过一个 Durable Object 限流器（一次 get + 一次 put），而这台账号的 DO 免费额度被读爆了 —— **一个用来保护服务的组件，把服务本身弄挂了**。
+
+改法是把它降级成 D1 里的一次 UPSERT（`rate_limits` 表，固定窗口），依赖的数据库本来就在读路径上，没有引入新的失败点。这件事写进 README 是因为它比任何"最佳实践"都更有用：**防护组件必须是可失败、可降级的**。
 
 ## 安全与隐私
 
@@ -288,7 +299,7 @@ npx wrangler deploy
 - **token 不出服务端**。浏览器只拿到一个 `HttpOnly; SameSite=Lax; Secure` 的会话 ID；token 用 AES-256-GCM 加密后存 D1，任何接口都不会回传它。
 - **SSRF 防护**。`buildApiUrl()` 拒绝绝对 URL，并强制 hostname 必须是 `api.github.com`；仓库名参数走严格白名单正则。
 - **横向越权防护**。所有缓存行以 `(login, repo)` 为主键，读取前再显式校验仓库归属；伪造 Cookie 直接 401。
-- **速率限制**。公共接口 90 次/分钟/IP，由 Durable Object 做强一致计数。
+- **速率限制**。公共接口 90 次/分钟/IP，D1 固定窗口计数（一次 UPSERT）；限流自身出错时直接放行，不会因为限流器故障拒绝正常请求。
 - **可删除**。设置里「断开连接」会一次性删除会话、仓库关联、缓存条目、同步状态和周报记录。
 
 完整说明见 [docs/PRIVACY.md](docs/PRIVACY.md)。

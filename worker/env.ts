@@ -4,7 +4,6 @@ export interface Env {
   // Cloudflare resources
   DB: D1Database;
   ASSETS: Fetcher;
-  RATE_LIMITER: DurableObjectNamespace;
 
   // Vars (wrangler.jsonc)
   APP_NAME: string;

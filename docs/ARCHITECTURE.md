@@ -19,7 +19,6 @@ repoops/
 │   ├── github.ts            # 只读 GitHub 客户端（含 SSRF 边界）
 │   ├── normalize.ts         # GitHub 原始结构 → NormalizedItem
 │   ├── sync.ts              # 同步服务、缓存、演示快照
-│   ├── rate-limiter.ts      # Durable Object 限流器
 │   └── migrations/          # D1 schema（按序号执行）
 ├── src/                     # React SPA
 │   ├── App.tsx              # 状态编排、数据加载、键盘交互
@@ -110,6 +109,7 @@ reports       (login, repo_full_name, window_key, payload, generated_at,
 demo_meta     (repo_full_name PK, payload, fetched_at, expires_at)
 demo_items    (repo_full_name, item_id, updated_at, payload,
                PK(repo_full_name, item_id))
+rate_limits   (bucket, window_start, count, PK(bucket, window_start))
 ```
 
 `demo_*` 与用户数据**没有任何共享行**：即使演示仓库和用户仓库同名，也是两张表，物理隔离。
@@ -149,7 +149,7 @@ demo_items    (repo_full_name, item_id, updated_at, payload,
 
 ## 限流
 
-Durable Object `RateLimiter`，固定窗口计数：
+D1 固定窗口计数（`rate_limits` 表，`(bucket, window_start)` 主键），每个请求一次 UPSERT：
 
 ```
 POST /api/session      cost 1   limit 90/min
@@ -158,14 +158,16 @@ GET  /api/demo         cost 2   limit 90/min
 POST .../sync          cost 5   limit 90/min
 ```
 
-用 DO 而不是 KV：KV 最终一致，并发请求会读到同一个旧计数，限流形同虚设。
+历史：最初用 Durable Object 做这件事。每请求 1 次 get + 1 次 put，把免费额度里的 DO 行读吃光，整个 API 直接返回 `Exceeded allowed rows read in Durable Objects free tier`。**限流器把被保护的服务打挂了**，于是改成 D1 —— 读路径上本来就依赖的数据库，没有新增失败点。计数写失败时直接放行（fail-open），因为拒绝正常请求的代价远高于放宽一次限流。
+
+不用 KV 的原因：KV 最终一致，并发请求会读到同一个旧计数。
 
 ## 定时任务
 
 `wrangler.jsonc → triggers.crons = ["17 */6 * * *"]`
 
 每次执行：
-1. 删掉演示仓库的 `demo_meta`（迫使下次读取时重抓），然后立即 `loadDemoSnapshot()` 预热。
+1. `refreshDemoSnapshot()` 原地刷新（不清表；失败时保留上一份可用快照）。
 2. 删除 `created_at` 超过 14 天的会话（兜底 Cookie 丢失的情况）。
 
 ## 部署拓扑
@@ -177,7 +179,6 @@ GitHub OAuth App ──redirect──> https://repoops.852367856.dpdns.org/api/a
                         Cloudflare Worker "repoops"
                         ├── ASSETS (dist/)
                         ├── DB (D1: repoops-db)
-                        ├── RATE_LIMITER (DO)
                         └── Cron: 17 */6 * * *
 ```
 

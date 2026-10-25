@@ -43,6 +43,16 @@ export function DetailPanel({ item, thresholds, onClose, onToast }: Props) {
 
   return (
     <aside className="detail" aria-label="事项详情" data-testid="detail-panel">
+      {/*
+        Close is a direct child of the panel, pinned to its corner. Keeping it
+        inside the header flex row meant a wide chip/title row could paint over
+        it (and swallow the click), because later siblings stack above earlier
+        ones for positioned and non-positioned mixes.
+      */}
+      <button className="btn btn--ghost btn--icon detail__close" onClick={onClose} aria-label="关闭详情面板">
+        <IconX size={13} />
+      </button>
+
       <div className="detail__head">
         <div className="detail__top">
           <span className="detail__kind">
@@ -65,9 +75,6 @@ export function DetailPanel({ item, thresholds, onClose, onToast }: Props) {
               <span>{item.commentsCount} 条评论</span>
             </div>
           </div>
-          <button className="btn btn--ghost btn--icon" onClick={onClose} aria-label="关闭详情面板">
-            <IconX size={13} />
-          </button>
         </div>
 
         <div className="detail__actions" style={{ marginTop: 10 }}>
