@@ -112,10 +112,65 @@ try {
           const r = a.getBoundingClientRect();
           return r.width > 0 && r.right <= window.innerWidth + 1;
         })(),
+        // Header geometry: the header must not eat the screen, must not have
+        // colliding controls, and the repo name must not be cut off.
+        header: (() => {
+          const bar = document.querySelector('.topbar');
+          const area = (sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 ? { right: r.right, bottom: r.bottom, left: r.left, top: r.top } : null;
+          };
+          const boxes = bar
+            ? [...bar.querySelectorAll('*')]
+                .map((el) => ({ el, r: el.getBoundingClientRect() }))
+                // icon glyphs inside one svg and the overlaid search icon are
+                // single visual units, not layout collisions
+                .filter((x) => x.r.width > 0 && x.r.height > 0 && !x.el.closest('svg') && !x.el.closest('.search'))
+            : [];
+          let collisions = 0;
+          for (let i = 0; i < boxes.length; i += 1) {
+            for (let j = i + 1; j < boxes.length; j += 1) {
+              const a = boxes[i];
+              const b = boxes[j];
+              if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+              const ox = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+              const oy = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+              if (ox > 2 && oy > 2) collisions += 1;
+            }
+          }
+          const repo = document.querySelector('.topbar__repo');
+          const srch = document.querySelector('#repoops-search');
+          return {
+            height: bar ? Math.round(bar.getBoundingClientRect().height) : 0,
+            vh: window.innerHeight,
+            collisions,
+            repoTruncated: repo ? repo.scrollWidth > repo.clientWidth + 1 : false,
+            searchWidth: srch ? Math.round(srch.getBoundingClientRect().width) : 0,
+            xRight: area('header.topbar a[aria-label*="作者 X"]')?.right ?? null,
+          };
+        })(),
       };
     });
 
     record(vp.name, '无横向溢出', m.scrollWidth <= m.innerWidth + 1, `${m.scrollWidth} / ${m.innerWidth}`);
+    // Header budget: ≤120px and ≤25% of the viewport, no overlapping controls.
+    record(
+      vp.name,
+      '顶栏高度 ≤120px 且 ≤25% 视口',
+      m.header.height <= 120 && m.header.height / m.header.vh <= 0.25,
+      `${m.header.height}px / ${m.header.vh}px (${Math.round((m.header.height / m.header.vh) * 100)}%)`,
+    );
+    record(vp.name, '顶栏内控件互不重叠', m.header.collisions === 0, `${m.header.collisions} collisions`);
+    record(vp.name, '顶栏仓库名未被截断', !m.header.repoTruncated);
+    record(vp.name, '顶栏搜索框宽度 ≥120px', m.header.searchWidth >= 120, `${m.header.searchWidth}px`);
+    record(
+      vp.name,
+      '作者 𝕏 位于顶栏右侧且不出屏',
+      m.header.xRight !== null && m.header.xRight > m.innerWidth * 0.6 && m.header.xRight <= m.innerWidth + 1,
+      `right=${m.header.xRight}`,
+    );
     if (m.overflowing.length) {
       record(vp.name, '没有元素超出右边界', false, m.overflowing.join(', '));
     } else {

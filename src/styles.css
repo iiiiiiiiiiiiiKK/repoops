@@ -364,11 +364,31 @@ button {
   flex: none;
 }
 
+/* Second header row wrapper. On desktop it disappears so search and the tool
+   icons sit inline with the title; phones turn it into a real row. */
+.topbar__row2 {
+  display: contents;
+}
+
+/* Two action groups so phones can reflow them: the author X link and settings
+   stay pinned top-right, while sync/report/theme can wrap to a second row
+   without dragging the 𝕏 button out of the corner. */
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+.topbar__actions--main {
+  margin-left: auto;
+}
+
 .topbar__title {
   display: flex;
   flex-direction: column;
   min-width: 0;
   gap: 1px;
+  flex: 1 1 auto;
 }
 .topbar__repo {
   font-weight: 650;
@@ -385,6 +405,18 @@ button {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+/* One compact warning pill replaces the individual text chips on phones. */
+.topbar__warn {
+  display: none;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.topbar__warn:hover {
+  border-color: var(--amber);
 }
 
 .search {
@@ -1259,6 +1291,30 @@ button {
 }
 
 @media (max-width: 1024px) {
+  /* Header stays on one row from 721px to 1024px, but the status chips must not
+     wrap: a wrapped chip row made the title 89px tall on a 768px tablet. */
+  .topbar__opt {
+    display: none;
+  }
+  .topbar__title {
+    flex-direction: row;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+  }
+  .topbar__repo {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .topbar__sub {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .search {
+    min-width: 170px;
+  }
   /* Below 1025px five columns cannot fit side by side without horizontal
      scrolling (185px x 5 + gaps + padding ≈ 1000px), so the board becomes one
      vertical stack. The whole document scrolls instead of an inner container:
@@ -1345,21 +1401,115 @@ button {
   :root {
     --topbar-h: 52px;
   }
+  /*
+    Phone header: two tight rows instead of a wrapping soup.
+       row 1: [☰]  owner/repo (+status chips) .......... 𝕏  ⚙
+       row 2: [search .................]  ↻  ▤  ◐
+
+    Before this, the flex container wrapped on its own, so the action cluster
+    (5 buttons ≈ 238px) landed on a line that overlapped the title — six
+    overlapping pairs at 320px — and the header grew to 231px, i.e. 41% of an
+    iPhone SE viewport before a single card was visible.
+  */
   .topbar {
-    padding: 0 10px;
-    gap: 8px;
-    flex-wrap: wrap;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'menu title main'
+      'row2 row2 row2';
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 6px;
+    padding: 7px 10px;
+    min-height: 0;
+  }
+  .topbar__menu {
+    grid-area: menu;
+  }
+  .topbar__row2 {
+    grid-area: row2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .topbar__actions--tools {
+    order: 2;
+  }
+  .topbar__title {
+    grid-area: title;
+    /* Was pushing the header to three lines: the status chips wrapped freely. */
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+  }
+  .topbar__repo {
+    font-size: 13px;
+    min-width: 0;
+  }
+  .topbar__sub {
+    flex-wrap: nowrap;
+    gap: 4px;
+    font-size: 10.5px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* Secondary metadata (time / count / quota) is one tap away in 设置 → 同步状态. */
+  .topbar__opt {
+    display: none;
+  }
+  /* Warning text chips would be clipped mid-word at 320px; show one icon pill
+     that opens the sync detail instead. */
+  .topbar__warn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+  }
+  .topbar__sub .chip:not(.topbar__warn):not(.chip--demo):not(.chip--live) {
+    display: none;
+  }
+  .topbar__repo {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .topbar__sub {
+    flex: 0 0 auto;
+  }
+  .topbar__actions--main {
+    grid-area: main;
+    margin-left: 0;
+    gap: 2px;
+  }
+  .topbar__actions--tools {
+    order: 2;
+    gap: 2px;
+    flex: none;
   }
   .search {
-    order: 3;
-    width: 100%;
+    order: 1;
+    flex: 1 1 auto;
+    width: auto;
     max-width: none;
-    flex-basis: 100%;
+    min-width: 0;
+    flex-basis: auto;
   }
   .search__kbd {
     display: none;
+  }
+  /* Icon-only buttons in the header on phones: labels would double the width. */
+  .topbar .hide-xs {
+    display: none;
+  }
+  .topbar .btn--sm {
+    padding: 6px;
+    min-width: 32px;
+  }
+  .topbar .chip {
+    min-height: 20px;
+    padding: 0 6px;
+    font-size: 10px;
   }
   /* One scrollable strip: keeps the board tall on small screens. Wrapping the
      toolbar instead would eat most of a 320px viewport. */
@@ -1410,8 +1560,13 @@ button {
 }
 
 @media (max-width: 420px) {
-  .topbar__sub {
-    font-size: 10.5px;
+  /* Keep the mode badge readable but tighter; the repo name keeps the rest of
+     the row and ellipsizes if the owner/name is unusually long. */
+  .topbar__sub .chip--demo,
+  .topbar__sub .chip--live {
+    font-size: 9.5px;
+    padding: 0 5px;
+    min-height: 18px;
   }
   .brand__sub {
     display: none;
@@ -1440,6 +1595,12 @@ button {
   .toolbar .chip,
   .toolbar .select {
     min-height: 32px;
+  }
+  /* The compact header warning pill is a real button — keep it tappable even
+     though the header chips are visually dense. */
+  .topbar .topbar__warn {
+    min-height: 28px;
+    padding: 0 7px;
   }
   .card {
     padding: 10px 11px;

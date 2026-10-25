@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2040%20E2E%20%2B%2084%20responsive%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
+[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2040%20E2E%20%2B%20129%20responsive%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 [在线演示](https://repoops.852367856.dpdns.org) · [架构说明](docs/ARCHITECTURE.md) · [OAuth 配置](docs/OAUTH.md) · [部署指南](docs/DEPLOY.md) · [隐私政策](docs/PRIVACY.md)
@@ -110,6 +110,40 @@ RepoOps 把仓库里的事项压成五个队列：
   <img src="docs/screenshots/mobile-detail.png" width="30%" alt="移动端详情" />
   <img src="docs/screenshots/mobile-report.png" width="30%" alt="移动端周报" />
 </p>
+
+## 移动端与自适应
+
+从 320px（iPhone SE 一代）到 1920px 桌面，布局按三段收敛：
+
+| 宽度 | 顶栏 | 看板 | 详情 |
+| --- | --- | --- | --- |
+| ≤720px（手机） | 两行紧凑栅格：`☰ · 仓库名+状态 · 𝕏` / `搜索 · 同步·周报·主题·设置` | 单列纵向堆叠 | 全屏覆盖 |
+| 721–1024px（平板） | 单行，状态元数据收起 | 单列纵向堆叠 | 全屏覆盖 |
+| ≥1025px | 单行：仓库名 · 搜索 · 工具 · 𝕏/设置 | 五列横向看板 | 右侧 420px 面板 |
+
+**手机顶栏优化（实测数字）**
+
+| 设备 | 优化前 | 优化后 |
+| --- | --- | --- |
+| iPhone SE 320×568 | 231px（占屏 41%），6 处控件重叠 | **89px（16%），0 重叠** |
+| iPhone SE2 375×667 | 195px（29%） | **89px（13%）** |
+| iPhone 14 390×844 | 153px（18%） | **89px（11%）** |
+| iPad mini 768×1024 | 90px，标题被状态徽标挤成 3 行 | **58px，单行** |
+
+具体做了什么：
+
+1. 顶栏在手机上改成 **CSS Grid 两行**，不再依赖 `flex-wrap` 自由折行——之前 5 个按钮（238px）会折到与标题重叠的第三行。
+2. 次要元数据（同步时间 / 条目数 / API 配额）在手机上收起，全部仍在「设置 → 同步状态」里。
+3. 多条同步警告折叠成**一个可点击的 ⚠ 药丸**（28px 触摸目标），点开就是同步详情；之前文字 chip 会被 `overflow:hidden` 从中间裁断。
+4. 工具按钮在手机上只留图标（保留 `aria-label`），把宽度让给搜索框与仓库名。
+5. `𝕏` 与设置固定在右上角，工具组落在第二行，两者不再争同一列。
+
+顺带修掉的两个真实 Bug：
+
+- **flex/grid 的 `min-width:auto` 把页面撑宽**：390px 视口下文档被一张长标题撑到 995px，导致详情面板关闭按钮跑到屏幕外点不到。
+- **`100dvh` 固定壳 + 波浪式折行**：横幅和工具栏吃掉高度后，320px 屏幕上 5 列看板被压成 65px。现在 ≤1024px 整页滚动。
+
+这些全部由 `tests/e2e/responsive-audit.mjs` 守护：9 个视口 × 129 条几何断言，任何一条退化都会让 CI 变红。
 
 ## 在线演示
 
@@ -226,7 +260,7 @@ npm run build                         # 生产构建
 
 node tests/integration/run.mjs  <url>  # 45 项 API 契约测试
 node tests/e2e/run.mjs          <url>  # 40 项浏览器 E2E（含 iPhone / iPad / 375px）
-node tests/e2e/responsive-audit.mjs <url>  # 84 项响应式几何断言（9 个视口）
+node tests/e2e/responsive-audit.mjs <url>  # 129 项响应式几何断言（9 个视口）
 GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/live-auth.mjs      <url>  # 42 项登录态真实流程测试
 ```
@@ -238,7 +272,7 @@ GITHUB_TEST_TOKEN=ghp_xxx \
 | 单元测试 | **58 / 58 通过** | 分桶规则、筛选、排序、周报数字、草稿生成、SSRF 防护、分页解析、仓库名校验 |
 | API 集成 | **45 / 45 通过** | 401/400/404/429 边界、SSRF 拒绝、演示数据隔离、限流生效（91 次后拦截）、无写接口 |
 | 浏览器 E2E | **40 / 40 通过** | 搜索、筛选、阈值重算、详情、草稿、周报数字对账、批量复制、键盘、主题、零控制台错误 |
-| 响应式几何审计 | **84 / 84 通过** | 320 / 375 / 390 / 430 / 768 / 1024 / 1280 / 1440 / 1920 九个视口：横向溢出、点击目标尺寸、字号、单列堆叠、详情面板是否出屏 |
+| 响应式几何审计 | **129 / 129 通过** | 320 / 375 / 390 / 430 / 768 / 1024 / 1280 / 1440 / 1920 九个视口：横向溢出、点击目标尺寸、字号、单列堆叠、详情面板是否出屏、顶栏高度预算、顶栏控件是否重叠、仓库名是否截断 |
 | 登录态流程 | **42 / 42 通过** | 真实私有仓库（`iiiiiiiiiiiiiKK/0xKill`）授权、增量同步、配额记录、跨用户隔离、断开连接清除数据 |
 
 其中 E2E 的关键断言是**周报数字与看板卡片数逐列相等**：
