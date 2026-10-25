@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2046%20API%20%2B%2040%20E2E%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
+[![Tests](https://img.shields.io/badge/tests-58%20unit%20%2B%2045%20API%20%2B%2040%20E2E%20%2B%2084%20responsive%20%2B%2042%20live-3fb950?style=flat-square)](#-测试)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 [在线演示](https://repoops.852367856.dpdns.org) · [架构说明](docs/ARCHITECTURE.md) · [OAuth 配置](docs/OAUTH.md) · [部署指南](docs/DEPLOY.md) · [隐私政策](docs/PRIVACY.md)
@@ -224,8 +224,9 @@ npm test                              # 58 个单元测试（Vitest）
 npm run typecheck                     # 前端 + Worker 双 tsconfig 严格类型检查
 npm run build                         # 生产构建
 
-node tests/integration/run.mjs  <url>  # 46 项 API 契约测试
+node tests/integration/run.mjs  <url>  # 45 项 API 契约测试
 node tests/e2e/run.mjs          <url>  # 40 项浏览器 E2E（含 iPhone / iPad / 375px）
+node tests/e2e/responsive-audit.mjs <url>  # 84 项响应式几何断言（9 个视口）
 GITHUB_TEST_TOKEN=ghp_xxx \
   node tests/live-auth.mjs      <url>  # 42 项登录态真实流程测试
 ```
@@ -235,8 +236,9 @@ GITHUB_TEST_TOKEN=ghp_xxx \
 | 套件 | 结果 | 覆盖内容 |
 | --- | --- | --- |
 | 单元测试 | **58 / 58 通过** | 分桶规则、筛选、排序、周报数字、草稿生成、SSRF 防护、分页解析、仓库名校验 |
-| API 集成 | **46 / 46 通过** | 401/400/404/429 边界、SSRF 拒绝、演示数据隔离、限流生效（90 次后拦截）、无写接口 |
-| 浏览器 E2E | **40 / 40 通过** | 搜索、筛选、阈值重算、详情、草稿、周报数字对账、批量复制、键盘、主题、响应式、零控制台错误 |
+| API 集成 | **45 / 45 通过** | 401/400/404/429 边界、SSRF 拒绝、演示数据隔离、限流生效（91 次后拦截）、无写接口 |
+| 浏览器 E2E | **40 / 40 通过** | 搜索、筛选、阈值重算、详情、草稿、周报数字对账、批量复制、键盘、主题、零控制台错误 |
+| 响应式几何审计 | **84 / 84 通过** | 320 / 375 / 390 / 430 / 768 / 1024 / 1280 / 1440 / 1920 九个视口：横向溢出、点击目标尺寸、字号、单列堆叠、详情面板是否出屏 |
 | 登录态流程 | **42 / 42 通过** | 真实私有仓库（`iiiiiiiiiiiiiKK/0xKill`）授权、增量同步、配额记录、跨用户隔离、断开连接清除数据 |
 
 其中 E2E 的关键断言是**周报数字与看板卡片数逐列相等**：
